@@ -124,50 +124,19 @@ void get_pressure(const Vector<double>& xi,const Vector<double>& ui,
 inline void get_d_pressure_dn(const Vector<double>& xi,const Vector<double>& ui,
  const DenseMatrix<double>& dui_dxj, const Vector<double>& ni, 
  DenseMatrix<double>& d_pressure_dn)
-{
-}
+{/* EMPTY */}
 
 // Assigns the value of pressure depending on the position (x,y)
 void get_d_pressure_dr(const Vector<double>& xi,const Vector<double>& ui,
   const DenseMatrix<double>& dui_dxj,
  const Vector<double>& ni, DenseMatrix<double>& d_pressure_dn)
-{
- 
-}
+{/* EMPTY */}
 
 // Assigns the value of pressure depending on the position (x,y)
 inline void get_d_pressure_d_grad_u(const Vector<double>& xi,const Vector<double>& ui,
  const DenseMatrix<double>& dui_dxj,
  const Vector<double>& ni, RankThreeTensor<double>& d_pressure_du_grad)
 {
-// RankThreeTensor<double> d_non_unit_ni_d_u_grad(3,3,2,0.0);
-// d_non_unit_ni_d_u_grad(0,1,0) = dui_dxj(2,1);
-// d_non_unit_ni_d_u_grad(0,2,1) = dui_dxj(1,0);
-// d_non_unit_ni_d_u_grad(0,2,0) =-(1.0+dui_dxj(1,1));
-// d_non_unit_ni_d_u_grad(0,1,1) =-dui_dxj(2,0);
-//
-// d_non_unit_ni_d_u_grad(1,0,0) =-dui_dxj(2,1);
-// d_non_unit_ni_d_u_grad(1,2,1) =-(1.0+dui_dxj(0,0));
-// d_non_unit_ni_d_u_grad(1,2,0) = dui_dxj(0,1);
-// d_non_unit_ni_d_u_grad(1,0,1) = dui_dxj(2,0);
-//
-// d_non_unit_ni_d_u_grad(2,0,0) = (1.0+dui_dxj(1,1));
-// d_non_unit_ni_d_u_grad(2,1,1) = (1.0+dui_dxj(0,0));
-// d_non_unit_ni_d_u_grad(2,0,1) =-dui_dxj(1,0);
-// d_non_unit_ni_d_u_grad(2,1,0) = dui_dxj(1,0);
-//
-// for(unsigned i=0; i<3;++i)
-//  {
-//  for(unsigned j=0; j<3;++j)
-//   {
-//   for(unsigned alpha=0; alpha<3;++alpha)
-//    {
-//    d_pressure_du_grad(i,j,alpha) = /*h**/p_mag *
-//             d_non_unit_ni_d_u_grad(i,j,alpha); 
-//    }
-//   }
-//  }
-
   // This way doesn't need an intermediate variable
   d_pressure_du_grad(0,1,0) = p_mag*dui_dxj(2,1);
   d_pressure_du_grad(0,2,1) = p_mag*dui_dxj(1,0);
@@ -425,7 +394,6 @@ void find_singular_p_value(const unsigned nneg_initial,
  const std::pair<double,double>& p_bracket, const double& thresh,
   bool& found_singular, int& depth)
  {
- //  oomph_info<<"Current " << nneg_small <<","<< nneg_big<<","<<p_small<<","<<p_big<<std::endl;
   // If we reach the bottom of the recursion or have found it return
   if(depth <= 0 || found_singular)
    { 
@@ -520,7 +488,6 @@ void loop_until_target_thickness(const double& initial_h, const double& target_h
    // Current pressure
    double current_h = initial_h, current_dh =initial_dh ,
           smallest_dh = initial_dh / pow(2.0,TestSoln::Max_number_hstep_halves);
-   bool last_solve_success =false;
    bool verbose = true;
    unsigned iter = 0 , maxiter = abs(round((target_h - initial_h)/smallest_dh));
 
@@ -630,7 +597,6 @@ void loop_until_target_thickness(const double& initial_h, const double& target_h
    current_h += current_dh;
    TestSoln::h = current_h;
    ++iter;
-   last_solve_success = true;
    }
    while((initial_dh>0 ? current_h < target_h : current_h > target_h ) && current_dh/smallest_dh >= 1 && iter<maxiter);
    // HERE tidy up
@@ -685,9 +651,7 @@ void loop_until_target_thickness_keep_fvk_pressure_constant
    // Current pressure
    double current_h = initial_h, current_dh =initial_dh ,
           smallest_dh = initial_dh / pow(2.0,TestSoln::Max_number_hstep_halves);
-   double current_p = TestSoln::p_mag; 
           
-   bool last_solve_success =false;
    bool verbose = true;
    unsigned iter = 0 , maxiter = abs(round((target_h - initial_h)/smallest_dh));
 
@@ -804,7 +768,6 @@ void loop_until_target_thickness_keep_fvk_pressure_constant
    // Update h
    TestSoln::h = current_h;
    ++iter;
-   last_solve_success = true;
    }
    while((initial_dh>0 ? current_h < target_h : current_h > target_h ) && current_dh/smallest_dh >= 1 && iter<maxiter);
    // HERE tidy up
@@ -1054,31 +1017,6 @@ void solve_eigen_problem(unsigned& number_of_negative_eigenvalues,
  {
   oomph_info<<"#################################################\n"<<std::endl;
   oomph_info << "Doing eigenproblem" << std::endl;
-//  Vector<double> p_crit(4,0.0);
-//  p_crit[0] =1.1e-5;
-//  p_crit[1] =1.12e-5;
-//  p_crit[2] =1.4e-5;
-//  p_crit[3] =2.1e-5;
-// 
-//  // The 'critical' values 
-//  if(TestSoln::p_mag<p_crit[0])
-//    number_of_negative_eigenvalues = 0 ;
-//  else if (TestSoln::p_mag>=p_crit[0] && TestSoln::p_mag<p_crit[1])
-//    number_of_negative_eigenvalues = 1 ;
-//  else if (TestSoln::p_mag>=p_crit[1] && TestSoln::p_mag<p_crit[2])
-//    number_of_negative_eigenvalues = 2 ;
-//  else if (TestSoln::p_mag>=p_crit[2] && TestSoln::p_mag<p_crit[3])
-//    number_of_negative_eigenvalues = 3 ;
-//  else 
-//    number_of_negative_eigenvalues = 4 ;
-//  {
-//   double tol = 2e-9;
-//   double& p = TestSoln::p_mag;
-//   found_singular = (fabs(p - p_crit[0]) < tol || fabs(p - p_crit[1]) < tol ||
-//     fabs(p - p_crit[2]) < tol || fabs(p - p_crit[3]) < tol);
-//   }
-//  oomph_info << std::endl << "Number of negative eigenvalues: "
-//             << number_of_negative_eigenvalues << std::endl;
   // How many eigenvalues do we try to get
   // Set default to positive infinity
   complex<double> default_value;
@@ -1169,7 +1107,7 @@ void solve_eigen_problem(unsigned& number_of_negative_eigenvalues,
 private:
 bool Investigate_eigen_cross;
 
-bool Use_centre_point_as_pin = false;
+bool Use_centre_point_as_pin;
 
 /// Helper function to apply boundary conditions
 void apply_boundary_conditions();
@@ -1229,7 +1167,7 @@ Mesh* Surface_mesh_pt;
 template<class ELEMENT>
 UnstructuredFvKProblem<ELEMENT>::UnstructuredFvKProblem(double element_area)
 :
-Element_area(element_area),Is_wrinkled(false),Investigate_eigen_cross(false)
+Element_area(element_area)
 {
 Vector<double> zeta(1);
 Vector<double> posn(2);
@@ -1274,7 +1212,7 @@ Vector<TriangleMeshOpenCurve *> inner_open_boundaries_pt(n_open_curves);
 //---------------
 //Create mesh parameters object
 TriangleMeshParameters mesh_parameters(outer_boundary_pt);
-TriangleMeshPolyLine *boundary2_pt;
+TriangleMeshPolyLine *boundary2_pt = 0;
 
 // Internal bit - this means we can have a boundary which is just the centre
 if(Use_centre_point_as_pin)
@@ -1347,7 +1285,7 @@ delete outer_boundary_ellipse_pt;
 delete outer_curvilinear_boundary_pt[0];
 delete outer_curvilinear_boundary_pt[1];
 delete inner_open_boundaries_pt[0];
-if(Use_centre_point_as_pin)
+if(boundary2_pt!=0)
  delete boundary2_pt;
 }
 
@@ -1719,14 +1657,6 @@ some_file << "TEXT X = 22, Y = 92, CS=FRAME T = \""
        << comment << "\"\n";
 some_file.close();
 
-// //  Output exact solution
-// sprintf(filename,"%s/exact_interpolated_soln%i-%f.dat","RESLT",Doc_info.number(),Element_area);
-// some_file.open(filename);
-// Bulk_mesh_pt->output_fct(some_file,npts,TestSoln::get_exact_w); 
-// some_file << "TEXT X = 22, Y = 92, CS=FRAME T = \"" 
-//        << comment << "\"\n";
-// some_file.close();
-
 // Output boundaries
 //------------------
 sprintf(filename,"RESLT/boundaries%i-%f.dat",Doc_info.number(),Element_area);
@@ -1807,8 +1737,6 @@ some_file<<"##  Format: err^2 norm^2 log(err/norm) \n";
 // Print error in prescribed format
 some_file<< dummy_error <<" "<< zero_norm <<" ";
 
-// Only divide by norm if its nonzero
-//some_file<<0.5*(log10(fabs(dummy_error))-log10(zero_norm))<<"\n";
 some_file.close();
 
 // Increment the doc_info number
@@ -1899,19 +1827,9 @@ int main(int argc, char **argv)
  // Store command line arguments
  CommandLineArgs::setup(argc,argv);
 
- // Define possible command line arguments and parse the ones that
- // were actually specified
-
  // Validation?
  CommandLineArgs::specify_command_line_flag("--validation");
 
- // Directory for solution
-//  string output_dir="RESLT";
-//  CommandLineArgs::specify_command_line_flag("--dir", &output_dir);
-
- // Poisson Ratio
- //CommandLineArgs::specify_command_line_flag("--nu", &TestSoln::nu);
- 
  // Physical Parameters
  CommandLineArgs::specify_command_line_flag("--p", &TestSoln::p_mag);
 
