@@ -32,7 +32,7 @@
 #include "generic.h" 
 
 // The equations
-#include "nonlinear_plate_models.h"
+#include "C1_large_displacement_plate_models.h"
 
 // The mesh
 #include "meshes/triangle_mesh.h"
@@ -54,8 +54,6 @@ double p_mag = 0.;
 double p_prev= 0.; 
 double nu = 0.5;
 double h = (0.34/80.);
-const double eta_xy = 1.0;//h*h;
-double eta_z = 1.0;//h;
 double displ_outer = 0.0;
 
 // Enum for displacement boundary condition type
@@ -67,66 +65,95 @@ enum Outer_stretch_type {
 Outer_stretch_type mode = radial_stretch;
 
 
-// Parametric function for boundary part 0
-void parametric_edge_0(const double& s, Vector<double>& x)
- { x[0] =-std::sin(s);  x[1] = std::cos(s);}
-// Derivative of parametric function
-void d_parametric_edge_0(const double& s, Vector<double>& dx)
- { dx[0] =-std::cos(s);  dx[1] =-std::sin(s);}
-// Derivative of parametric function
-void d2_parametric_edge_0(const double& s, Vector<double>& dx)
- { dx[0] = std::sin(s);  dx[1] =-std::cos(s);}
-
-// Parametric function for boundary part 1
-void parametric_edge_1(const double& s, Vector<double>& x)
-{ x[0] = std::sin(s);  x[1] =-std::cos(s);}
-// Derivative of parametric function
-void  d_parametric_edge_1(const double& s, Vector<double>& dx)
-{ dx[0] = std::cos(s);  dx[1] = std::sin(s);};
-// Derivative of parametric function
-void  d2_parametric_edge_1(const double& s, Vector<double>& dx)
-{ dx[0] =-std::sin(s);  dx[1] = std::cos(s);};
-
-// Get s from x
-double get_s_0(const Vector<double>& x)
-{
-// The arc length (parametric parameter) for the upper semi circular arc
- return atan2(-x[0],x[1]);
-}
-
-// Get s from x
-double get_s_1(const Vector<double>& x)
-{
-// The arc length (parametric parameter) for the lower semi circular arc
-return atan2(x[0],-x[1]);
-}
+/*                     PARAMETRIC BOUNDARY DEFINITIONS                        */
+// Here we create the geom objects for the Parametric Boundary Definition 
+CurvilineCircleTop parametric_curve_top;
+CurvilineCircleBottom parametric_curve_bottom;
 
 // Assigns the value of pressure depending on the position (x,y)
 void get_pressure(const Vector<double>& xi,const Vector<double>& ui,
- const Vector<double>& ni, Vector<double>& pressure)
+ const DenseMatrix<double>& dui_dxj,  const Vector<double>& ni, 
+ Vector<double>& pressure)
 {
+ // We are distributing the pressure over the deformed surface
+ // so the area element will be dA = \sqrt(det(g)) da with da the area element on
+ // the undeformed sheet. So a 'following' pressure will be p n_i dA
+ // or \sqrt(g) n_i da = r,x * r,y p da  with  * the cross product
+ Vector<double> non_unit_ni(3);
+ non_unit_ni[0] = (dui_dxj(1,0))*dui_dxj(2,1) - dui_dxj(2,0)*(1.0+dui_dxj(1,1));
+ non_unit_ni[1] =-(1.0+dui_dxj(0,0))*dui_dxj(2,1) + dui_dxj(2,0)*(dui_dxj(0,1));
+ non_unit_ni[2] = (1.0+dui_dxj(0,0))*(1.0+dui_dxj(1,1)) - dui_dxj(0,1)*(dui_dxj(1,0));
+  
  for(unsigned i=0; i<3;++i)
   {
    // N.B Non dimensional  p = p* L / E h where p* is dimensional
-   pressure[i] = p_mag*ni[i]; 
+   pressure[i] = /*h**/p_mag*non_unit_ni[i]; 
   }
 }
 
 // Assigns the value of pressure depending on the position (x,y)
 inline void get_d_pressure_dn(const Vector<double>& xi,const Vector<double>& ui,
- const Vector<double>& ni, DenseMatrix<double>& d_pressure_dn)
+ const DenseMatrix<double>& dui_dxj, const Vector<double>& ni, 
+ DenseMatrix<double>& d_pressure_dn)
 {
- for(unsigned i=0; i<3;++i)
-  {
-   d_pressure_dn(i,i) = p_mag; 
-  }
 }
 
 // Assigns the value of pressure depending on the position (x,y)
 void get_d_pressure_dr(const Vector<double>& xi,const Vector<double>& ui,
+  const DenseMatrix<double>& dui_dxj,
  const Vector<double>& ni, DenseMatrix<double>& d_pressure_dn)
 {
  
+}
+
+// Assigns the value of pressure depending on the position (x,y)
+inline void get_d_pressure_d_grad_u(const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj,
+ const Vector<double>& ni, RankThreeTensor<double>& d_pressure_du_grad)
+{
+// RankThreeTensor<double> d_non_unit_ni_d_u_grad(3,3,2,0.0);
+// d_non_unit_ni_d_u_grad(0,1,0) = dui_dxj(2,1);
+// d_non_unit_ni_d_u_grad(0,2,1) = dui_dxj(1,0);
+// d_non_unit_ni_d_u_grad(0,2,0) =-(1.0+dui_dxj(1,1));
+// d_non_unit_ni_d_u_grad(0,1,1) =-dui_dxj(2,0);
+//
+// d_non_unit_ni_d_u_grad(1,0,0) =-dui_dxj(2,1);
+// d_non_unit_ni_d_u_grad(1,2,1) =-(1.0+dui_dxj(0,0));
+// d_non_unit_ni_d_u_grad(1,2,0) = dui_dxj(0,1);
+// d_non_unit_ni_d_u_grad(1,0,1) = dui_dxj(2,0);
+//
+// d_non_unit_ni_d_u_grad(2,0,0) = (1.0+dui_dxj(1,1));
+// d_non_unit_ni_d_u_grad(2,1,1) = (1.0+dui_dxj(0,0));
+// d_non_unit_ni_d_u_grad(2,0,1) =-dui_dxj(1,0);
+// d_non_unit_ni_d_u_grad(2,1,0) = dui_dxj(1,0);
+//
+// for(unsigned i=0; i<3;++i)
+//  {
+//  for(unsigned j=0; j<3;++j)
+//   {
+//   for(unsigned alpha=0; alpha<3;++alpha)
+//    {
+//    d_pressure_du_grad(i,j,alpha) = /*h**/p_mag *
+//             d_non_unit_ni_d_u_grad(i,j,alpha); 
+//    }
+//   }
+//  }
+
+  // This way doesn't need an intermediate variable
+  d_pressure_du_grad(0,1,0) = p_mag*dui_dxj(2,1);
+  d_pressure_du_grad(0,2,1) = p_mag*dui_dxj(1,0);
+  d_pressure_du_grad(0,2,0) =-p_mag*(1.0+dui_dxj(1,1));
+  d_pressure_du_grad(0,1,1) =-p_mag*dui_dxj(2,0);
+
+  d_pressure_du_grad(1,0,0) =-p_mag*dui_dxj(2,1);
+  d_pressure_du_grad(1,2,1) =-p_mag*(1.0+dui_dxj(0,0));
+  d_pressure_du_grad(1,2,0) = p_mag*dui_dxj(0,1);
+  d_pressure_du_grad(1,0,1) = p_mag*dui_dxj(2,0);
+
+  d_pressure_du_grad(2,0,0) = p_mag*(1.0+dui_dxj(1,1));
+  d_pressure_du_grad(2,1,1) = p_mag*(1.0+dui_dxj(0,0));
+  d_pressure_du_grad(2,0,1) =-p_mag*dui_dxj(1,0);
+  d_pressure_du_grad(2,1,0) =-p_mag*dui_dxj(0,1);
 }
 
 void get_my_prestretch_solution(const Vector<double>& xi, Vector<double>& w)
@@ -787,6 +814,7 @@ if(!TestSoln::use_linear_elasticity)
 el_pt->nu_pt() = &TestSoln::nu;
 el_pt->d_pressure_dn_fct_pt() = &TestSoln::get_d_pressure_dn;
 el_pt->d_pressure_dr_fct_pt() = &TestSoln::get_d_pressure_dr;
+el_pt->d_pressure_d_grad_u_fct_pt() = &TestSoln::get_d_pressure_d_grad_u;
 el_pt->thickness_pt() = &TestSoln::h;
 
 }
@@ -913,30 +941,19 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
 {
  // How many bulk elements adjacent to boundary b
  unsigned n_element = bulk_mesh_pt-> nboundary_element(b);
- 
  // These depend on the boundary we are on
- void (*parametric_edge_fct_pt)(const double& s, Vector<double>& x);
- void (*d_parametric_edge_fct_pt)(const double& s, Vector<double>& dx);
- void (*d2_parametric_edge_fct_pt)(const double& s, Vector<double>& dx);
- double (*get_arc_position)(const Vector<double>& s);
- 
-// Define the functions for each part of the boundary
+ CurvilineGeomObject* parametric_curve_pt; 
+ // Define the functions for each part of the boundary
  switch (b)
   {
    // Upper boundary
    case 0:
-    parametric_edge_fct_pt = &TestSoln::parametric_edge_0;
-    d_parametric_edge_fct_pt = &TestSoln::d_parametric_edge_0;
-    d2_parametric_edge_fct_pt = &TestSoln::d2_parametric_edge_0;
-    get_arc_position = &TestSoln::get_s_0;
+    parametric_curve_pt = &TestSoln::parametric_curve_top;
    break;
 
    // Lower boundary
    case 1:
-    parametric_edge_fct_pt = &TestSoln::parametric_edge_1;
-    d_parametric_edge_fct_pt = &TestSoln::d_parametric_edge_1;
-    d2_parametric_edge_fct_pt = &TestSoln::d2_parametric_edge_1;
-    get_arc_position = &TestSoln::get_s_1;
+    parametric_curve_pt = &TestSoln::parametric_curve_bottom;
    break;
 
    default:
@@ -956,25 +973,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
     bulk_mesh_pt->boundary_element_pt(b,e));
    
    // Loop over nodes
-   unsigned nnode=bulk_el_pt->nnode();
+   const unsigned nnode=3;
    unsigned index_of_interior_node=3;
-   
+
    // The edge that is curved
-   MyC1CurvedElements::TestElement<5>::Edge edge;
+   MyC1CurvedElements::Edge edge;
 
    // Vertices positions
    Vector<Vector<double> > xn(3,Vector<double>(2,0.0));
  
-   // Get vertices for debugging
-   Vector<Vector<double> > verts(3,Vector<double>(2,0.0));
    // Loop nodes
    for(unsigned n=0;n<nnode;++n)
     {
      // If it is on boundary
      Node* nod_pt = bulk_el_pt->node_pt(n);
-     verts[n][0]=nod_pt->x(0);
-     verts[n][1]=nod_pt->x(1);
-     if(nod_pt->is_on_boundary())
+     if(nod_pt->is_on_boundary(0) || nod_pt->is_on_boundary(1))
       {
        xn[n][0]=nod_pt->x(0);
        xn[n][1]=nod_pt->x(1);
@@ -986,21 +999,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
    double s_ubar, s_obar;
 
    // s at the next (cyclic) node after interior
-   s_ubar = (*get_arc_position)(xn[(index_of_interior_node+1) % 3]);
+   s_ubar = parametric_curve_pt->get_zeta(xn[(index_of_interior_node+1) % 3]);
    // s at the previous (cyclic) node before interior
-   s_obar = (*get_arc_position)(xn[(index_of_interior_node+2) % 3]);
+   s_obar = parametric_curve_pt->get_zeta(xn[(index_of_interior_node+2) % 3]);
 
    // Assign edge case
    switch(index_of_interior_node)
     {
-     case 0: edge= MyC1CurvedElements::TestElement<5>::zero; 
+     case 0: edge= MyC1CurvedElements::zero; 
       break;
-     case 1: edge= MyC1CurvedElements::TestElement<5>::one; 
+     case 1: edge= MyC1CurvedElements::one; 
       break;
-     case 2: edge= MyC1CurvedElements::TestElement<5>::two; 
+     case 2: edge= MyC1CurvedElements::two; 
       break;
      // Should break it here HERE
-     default: edge= MyC1CurvedElements::TestElement<5>::none; 
+     default: edge= MyC1CurvedElements::none; 
       throw OomphLibError(
        "The edge number has been set to a value greater than two: either we have\
  quadrilateral elements or more likely the index_of_interior_node was never set\
@@ -1010,23 +1023,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
       break;
      }
    if (s_ubar>s_obar)
-    {std::cout<<s_ubar<<" "<<s_obar<<"\n";}
-   // Check for inverted elements HERE
+    {
+     oomph_info <<"Apparent clockwise direction of parametric coordinate."
+                <<"This will probably result in an inverted element."
+                <<"s_start="<<s_ubar<<"; s_end ="<<s_obar<<std::endl;
+     throw OomphLibError(
+       "The Edge coordinate appears to be decreasing from s_start to s_end. \
+Either the parametric boundary is defined to be clockwise (a no-no) or \
+the mesh has returned an inverted element (less likely)",
+       "UnstructuredFvKProblem::upgrade_edge_elements_to_curve(...)",
+       OOMPH_EXCEPTION_LOCATION);
+    }
 
    // Upgrade it
-    bulk_el_pt->upgrade_to_curved_element(edge,s_ubar,s_obar,
-     *parametric_edge_fct_pt,*d_parametric_edge_fct_pt,
-     *d2_parametric_edge_fct_pt);
-    
-   // Get vertices for debugging
-   Vector<Vector<double> > lverts(3,Vector<double>(2,0.0));
-   lverts[0][0]=1.0;
-   lverts[1][1]=1.0;
-   Vector<Vector<double> > fkverts(3,Vector<double>(2,0.0));
-   bulk_el_pt->get_coordinate_x(lverts[0],fkverts[0]);
-   bulk_el_pt->get_coordinate_x(lverts[1],fkverts[1]);
-   bulk_el_pt->get_coordinate_x(lverts[2],fkverts[2]);
-
+   bulk_el_pt->upgrade_to_curved_element(edge,s_ubar,s_obar,
+    parametric_curve_pt);     
   }
 }// end upgrade elements
 
@@ -1230,7 +1241,7 @@ surface_mesh_pt->flush_element_and_node_storage();
 namespace TestSoln{
 // Problem_pt
 //UnstructuredFvKProblem<KoiterSteigmannC1CurvedBellElement<2,2,5> >* problem_pt=0;
-UnstructuredFvKProblem<NonlinearPlateC1CurvedBellElement<2,2,5,
+UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,
 KoiterSteigmannPlateEquations> >* problem_pt=0;
 
 static void write_checkpoint()
@@ -1430,7 +1441,7 @@ Fix this and rerun. Exiting Script."<<std::endl;
 
  // Problem instance
  // UnstructuredFvKProblem<KoiterSteigmannC1CurvedBellElement<2,2,5> >problem(element_area);
- UnstructuredFvKProblem<NonlinearPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
+ UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
  // Set pointer to the problem
  // Set pointer to the problem
  TestSoln::problem_pt = &problem;
