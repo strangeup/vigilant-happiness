@@ -32,7 +32,7 @@
 #include "generic.h" 
 
 // The equations
-#include "nonlinear_plate_models.h"
+#include "C1_large_displacement_plate_models.h"
 
 // The mesh
 #include "meshes/triangle_mesh.h"
@@ -60,62 +60,14 @@ double h_prev= h;
 const unsigned Number_of_fourier_terms = 10;
 const unsigned First_fourier_wavenumber = 11;
 
-// Parametric function for boundary part 0
-void parametric_edge_0(const double& s, Vector<double>& x)
- { x[0] =-std::sin(s);  x[1] = std::cos(s);}
-// Derivative of parametric function
-void d_parametric_edge_0(const double& s, Vector<double>& dx)
- { dx[0] =-std::cos(s);  dx[1] =-std::sin(s);}
-// Derivative of parametric function
-void d2_parametric_edge_0(const double& s, Vector<double>& dx)
- { dx[0] = std::sin(s);  dx[1] =-std::cos(s);}
-
-// Parametric function for boundary part 1
-void parametric_edge_1(const double& s, Vector<double>& x)
-{ x[0] = std::sin(s);  x[1] =-std::cos(s);}
-// Derivative of parametric function
-void  d_parametric_edge_1(const double& s, Vector<double>& dx)
-{ dx[0] = std::cos(s);  dx[1] = std::sin(s);};
-// Derivative of parametric function
-void  d2_parametric_edge_1(const double& s, Vector<double>& dx)
-{ dx[0] =-std::sin(s);  dx[1] = std::cos(s);};
-
-// // Foppl von karman scaling
-// const double eta_m = h;
-// const double eta_t = 1;
-// HERE need to update these values if h is changed
- /*const*/ double eta_gamma  = h*h;
- /*const*/ double eta_u_xy = h;
- /*const*/ double eta_u_z  = 1;
- /*const*/ double eta_u_xy_in_t = h*h;
- /*const*/ double eta_u_z_in_t  = 1;
-
- // Dissapears when eta_g_z = 0 
- /*const*/ double eta_g_xy = h*h;
- /*const*/ double eta_g_z  = h;
-
- /*const*/ double eta_e_xy = h*h;
- /*const*/ double eta_e_z  = 1;
- /*const*/ double bending_h =1;
-
-// This updates the nondim parameters when called
-void update_nondimensional_parameters()
- {
-  TestSoln::eta_gamma  = h*h;
-  TestSoln::eta_u_xy = h;
-  TestSoln::eta_u_z  = 1;
-  TestSoln::eta_u_xy_in_t = h*h;
-  TestSoln::eta_u_z_in_t  = 1;
-  TestSoln::eta_g_xy = h*h;
-  TestSoln::eta_g_z  = h;
-  TestSoln::eta_e_xy = h*h;
-  TestSoln::eta_e_z  = 1;
-  TestSoln::bending_h =1;
- }
-
 // Max times to half the pressure step
 unsigned Max_number_pstep_halves = 2;
 unsigned Max_number_hstep_halves = 2;
+
+/*                     PARAMETRIC BOUNDARY DEFINITIONS                        */
+// Here we create the geom objects for the Parametric Boundary Definition 
+CurvilineCircleTop parametric_curve_top;
+CurvilineCircleBottom parametric_curve_bottom;
 
 // Bool for doing the eigen problem
 bool do_eigen=true;
@@ -152,7 +104,7 @@ void get_pressure(const Vector<double>& xi,const Vector<double>& ui,
  const DenseMatrix<double>& dui_dxj,  const Vector<double>& ni, 
  Vector<double>& pressure)
 {
- // We are distributin the pressure over the deformed surface
+ // We are distributing the pressure over the deformed surface
  // so the area element will be dA = \sqrt(det(g)) da with da the area element on
  // the undeformed sheet. So a 'following' pressure will be p n_i dA
  // or \sqrt(g) n_i da = r,x * r,y p da  with  * the cross product
@@ -404,7 +356,7 @@ void pin_first_point()
   // Get first point
   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(0,0);
     {
-     oomph_info <<"Usign first node. Pinning inplane displacements and setting to zero."<<std::endl;
+     oomph_info <<"Using first node. Pinning inplane displacements and setting to zero."<<std::endl;
      nod_pt -> pin(0);
      nod_pt -> pin(6);
      nod_pt -> set_value(0,0.0);
@@ -1469,25 +1421,7 @@ el_pt->d_pressure_d_grad_u_fct_pt() = &TestSoln::get_d_pressure_d_grad_u;
 el_pt->error_metric_fct_pt() = &TestSoln::error_metric;
 el_pt->multiple_error_metric_fct_pt() = &TestSoln::fourier_transform_metric;
 
-// Now set the non dimensionalisation
-// Introduce one at a time and check the Jacobian and residuals match up
-if(TestSoln::Use_jfm_nondimensionalisation)
- {
- el_pt->thickness_pt() = &TestSoln::bending_h;
- el_pt->eta_gamma_pt() = &TestSoln::eta_gamma;
- el_pt->eta_u_xy_pt() = &TestSoln::eta_u_xy ;
- el_pt->eta_u_z_pt() = &TestSoln::eta_u_z  ;
- el_pt->eta_u_xy_in_t_pt() = &TestSoln::eta_u_xy_in_t ;
- el_pt->eta_u_z_in_t_pt() = &TestSoln::eta_u_z_in_t  ;
- el_pt->eta_g_xy_pt() = &TestSoln::eta_g_xy ;
- el_pt->eta_g_z_pt() = &TestSoln::eta_g_z  ;
- el_pt->eta_e_xy_pt() = &TestSoln::eta_e_xy ;
- el_pt->eta_e_z_pt() = &TestSoln::eta_e_z  ;
- }
-else
- {
 el_pt->thickness_pt() = &TestSoln::h;
- }
 }
 
 // Loop over flux elements to pass pointer to prescribed traction function
@@ -1579,30 +1513,19 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
 {
  // How many bulk elements adjacent to boundary b
  unsigned n_element = bulk_mesh_pt-> nboundary_element(b);
- 
  // These depend on the boundary we are on
- void (*parametric_edge_fct_pt)(const double& s, Vector<double>& x);
- void (*d_parametric_edge_fct_pt)(const double& s, Vector<double>& dx);
- void (*d2_parametric_edge_fct_pt)(const double& s, Vector<double>& dx);
- double (*get_arc_position)(const Vector<double>& s);
- 
-// Define the functions for each part of the boundary
+ CurvilineGeomObject* parametric_curve_pt; 
+ // Define the functions for each part of the boundary
  switch (b)
   {
    // Upper boundary
    case 0:
-    parametric_edge_fct_pt = &TestSoln::parametric_edge_0;
-    d_parametric_edge_fct_pt = &TestSoln::d_parametric_edge_0;
-    d2_parametric_edge_fct_pt = &TestSoln::d2_parametric_edge_0;
-    get_arc_position = &TestSoln::get_s_0;
+    parametric_curve_pt = &TestSoln::parametric_curve_top;
    break;
 
    // Lower boundary
    case 1:
-    parametric_edge_fct_pt = &TestSoln::parametric_edge_1;
-    d_parametric_edge_fct_pt = &TestSoln::d_parametric_edge_1;
-    d2_parametric_edge_fct_pt = &TestSoln::d2_parametric_edge_1;
-    get_arc_position = &TestSoln::get_s_1;
+    parametric_curve_pt = &TestSoln::parametric_curve_bottom;
    break;
 
    default:
@@ -1622,25 +1545,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
     bulk_mesh_pt->boundary_element_pt(b,e));
    
    // Loop over nodes
-   unsigned nnode=bulk_el_pt->nnode();
+   const unsigned nnode=3;
    unsigned index_of_interior_node=3;
-   
+
    // The edge that is curved
-   MyC1CurvedElements::TestElement<5>::Edge edge;
+   MyC1CurvedElements::Edge edge;
 
    // Vertices positions
    Vector<Vector<double> > xn(3,Vector<double>(2,0.0));
  
-   // Get vertices for debugging
-   Vector<Vector<double> > verts(3,Vector<double>(2,0.0));
    // Loop nodes
    for(unsigned n=0;n<nnode;++n)
     {
      // If it is on boundary
      Node* nod_pt = bulk_el_pt->node_pt(n);
-     verts[n][0]=nod_pt->x(0);
-     verts[n][1]=nod_pt->x(1);
-     if(nod_pt->is_on_boundary())
+     if(nod_pt->is_on_boundary(0) || nod_pt->is_on_boundary(1))
       {
        xn[n][0]=nod_pt->x(0);
        xn[n][1]=nod_pt->x(1);
@@ -1652,21 +1571,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
    double s_ubar, s_obar;
 
    // s at the next (cyclic) node after interior
-   s_ubar = (*get_arc_position)(xn[(index_of_interior_node+1) % 3]);
+   s_ubar = parametric_curve_pt->get_zeta(xn[(index_of_interior_node+1) % 3]);
    // s at the previous (cyclic) node before interior
-   s_obar = (*get_arc_position)(xn[(index_of_interior_node+2) % 3]);
+   s_obar = parametric_curve_pt->get_zeta(xn[(index_of_interior_node+2) % 3]);
 
    // Assign edge case
    switch(index_of_interior_node)
     {
-     case 0: edge= MyC1CurvedElements::TestElement<5>::zero; 
+     case 0: edge= MyC1CurvedElements::zero; 
       break;
-     case 1: edge= MyC1CurvedElements::TestElement<5>::one; 
+     case 1: edge= MyC1CurvedElements::one; 
       break;
-     case 2: edge= MyC1CurvedElements::TestElement<5>::two; 
+     case 2: edge= MyC1CurvedElements::two; 
       break;
      // Should break it here HERE
-     default: edge= MyC1CurvedElements::TestElement<5>::none; 
+     default: edge= MyC1CurvedElements::none; 
       throw OomphLibError(
        "The edge number has been set to a value greater than two: either we have\
  quadrilateral elements or more likely the index_of_interior_node was never set\
@@ -1676,23 +1595,21 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
       break;
      }
    if (s_ubar>s_obar)
-    {std::cout<<s_ubar<<" "<<s_obar<<"\n";}
-   // Check for inverted elements HERE
+    {
+     oomph_info <<"Apparent clockwise direction of parametric coordinate."
+                <<"This will probably result in an inverted element."
+                <<"s_start="<<s_ubar<<"; s_end ="<<s_obar<<std::endl;
+     throw OomphLibError(
+       "The Edge coordinate appears to be decreasing from s_start to s_end. \
+Either the parametric boundary is defined to be clockwise (a no-no) or \
+the mesh has returned an inverted element (less likely)",
+       "UnstructuredFvKProblem::upgrade_edge_elements_to_curve(...)",
+       OOMPH_EXCEPTION_LOCATION);
+    }
 
    // Upgrade it
-    bulk_el_pt->upgrade_to_curved_element(edge,s_ubar,s_obar,
-     *parametric_edge_fct_pt,*d_parametric_edge_fct_pt,
-     *d2_parametric_edge_fct_pt);
-    
-   // Get vertices for debugging
-   Vector<Vector<double> > lverts(3,Vector<double>(2,0.0));
-   lverts[0][0]=1.0;
-   lverts[1][1]=1.0;
-   Vector<Vector<double> > fkverts(3,Vector<double>(2,0.0));
-   bulk_el_pt->get_coordinate_x(lverts[0],fkverts[0]);
-   bulk_el_pt->get_coordinate_x(lverts[1],fkverts[1]);
-   bulk_el_pt->get_coordinate_x(lverts[2],fkverts[2]);
-
+   bulk_el_pt->upgrade_to_curved_element(edge,s_ubar,s_obar,
+    parametric_curve_pt);     
   }
 }// end upgrade elements
 
@@ -1923,7 +1840,7 @@ surface_mesh_pt->flush_element_and_node_storage();
 
 namespace TestSoln{
 // Problem_pt
-UnstructuredFvKProblem<NonlinearPlateC1CurvedBellElement<2,2,5,
+UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,
 KoiterSteigmannPlateEquations> >* problem_pt=0;
 
 static void write_checkpoint()
@@ -2064,8 +1981,6 @@ int main(int argc, char **argv)
  
  // Parse command line
  CommandLineArgs::parse_and_assign(); 
- //Now update nondim paremeters based on h
- TestSoln::update_nondimensional_parameters();
 
  // Cast max depth to int
  if(CommandLineArgs::command_line_flag_has_been_set("--max_singular_steps"))
@@ -2105,7 +2020,7 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
  double first_p = p_start;
 
  // Problem instance
- UnstructuredFvKProblem<NonlinearPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
+ UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
  // Set pointer to the problem
  TestSoln::problem_pt = &problem;
 
@@ -2173,8 +2088,6 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
   oomph_info<<"The thickness read in is: "<<TestSoln::h<<std::endl;
   chk>>TestSoln::h;
   chk.close();
-  //Now update nondim paremeters based on h
-  TestSoln::update_nondimensional_parameters();
 
   std::cerr<<"Opening checkpoint doc info number."<<std::endl;
   chk.open("checkpoint_nsoln");

@@ -16,7 +16,7 @@ circular_disc_uniform_pressure_koiter_steigmann_fully_clamped_out_pinned_in.cc
 circular_disc_rolling_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
  -lC1_basis -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
 
-circular_disc_clamped_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
+circular_disc_full_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
  -lC1_basis -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
 
 # Local sources that Jack's own code depends on: This code also uses
