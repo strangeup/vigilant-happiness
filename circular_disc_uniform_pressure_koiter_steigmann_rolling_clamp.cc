@@ -221,6 +221,9 @@ double Singular_tolerance = 1e-14;
 double Singular_prefactor = .1;
 
 double Arnoldi_multiple = 2; 
+
+// Use a fd jacobian
+bool use_fd_jacobian = true;
 }
 
 ///////////////////////////////////////////////////////////
@@ -245,7 +248,15 @@ UnstructuredFvKProblem(double element_area = 0.1);
 {
  delete (Surface_mesh_pt);
  delete (Bulk_mesh_pt);
- 
+ // Clean up mesh parameters
+ delete Outer_boundary_pt;
+ delete Outer_boundary_ellipse_pt;
+ delete Outer_curvilinear_boundary_pt[0];
+ delete Outer_curvilinear_boundary_pt[1];
+ delete Inner_open_boundaries_pt[0];
+ // Check it's not 0
+ if(Boundary2_pt!=0)
+  delete Boundary2_pt;
 };
 
 void actions_after_read_unstructured_meshes()
@@ -863,7 +874,10 @@ void loop_until_target_pressure(const double& initial_p, const double& target_p,
          store_current_dof_values();
          // Now halve the step size and continue
          current_dp /= 2.0; 
+         // Go to halfway between
          current_p -= current_dp;
+         // Revert 
+         TestSoln::p_mag = current_p;
          continue;
         }
        // If we failed on the first iteration
@@ -1104,11 +1118,10 @@ void solve_eigen_problem(unsigned& number_of_negative_eigenvalues,
   }
   oomph_info<<"#################################################\n"<<std::endl;
  }
+
+void print_jacobian();
+
 private:
-bool Investigate_eigen_cross;
-
-bool Use_centre_point_as_pin;
-
 /// Helper function to apply boundary conditions
 void apply_boundary_conditions();
 
@@ -1127,33 +1140,22 @@ enum
  Inner_boundary0 = 2
 };
 
+/// Element area data
 double Element_area;
 
+/// Bool investigate the eigen cross?
+bool Investigate_eigen_cross;
+
+/// Bool use the centre point to pin it?
+bool Use_centre_point_as_pin;
+
+/// Bool is wrinkled
 bool Is_wrinkled;
-
-// The extra members required for flux type boundary conditions.
-/// \short Number of "bulk" elements (We're attaching flux elements
-/// to bulk mesh --> only the first Nkirchhoff_elements elements in
-/// the mesh are bulk elements!)
-// unsigned Nkirchhoff_elements;
-
-/// \short Create bending moment elements on the b-th boundary of the
-/// problems mesh 
-void create_traction_elements(const unsigned &b, Mesh* const & bulk_mesh_py,
-                            Mesh* const &surface_mesh_pt);
 
 void upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const & 
  bulk_mesh_pt);
 
 void rotate_edge_degrees_of_freedom(Mesh* const &bulk_mesh_pt);
-
-
-/// \short Delete traction elements and wipe the surface mesh
-void delete_traction_elements(Mesh* const &surface_mesh_pt);
-
-/// \short Set pointer to prescribed-flux function for all elements
-/// in the surface mesh
-void set_prescribed_traction_pt();
 
 /// Pointer to "bulk" mesh
 TriangleMesh<ELEMENT>* Bulk_mesh_pt;
@@ -1161,13 +1163,23 @@ TriangleMesh<ELEMENT>* Bulk_mesh_pt;
 /// Pointer to "surface" mesh
 Mesh* Surface_mesh_pt;
 
+/// Pointers to mesh objects
+Ellipse* Outer_boundary_ellipse_pt;
+TriangleMeshClosedCurve* Outer_boundary_pt;
+Vector<TriangleMeshCurveSection*> Outer_curvilinear_boundary_pt;
+Vector<TriangleMeshOpenCurve *> Inner_open_boundaries_pt;
+TriangleMeshPolyLine* Boundary2_pt;
+Vector<TriangleMeshCurveSection *> Internal_curve_section1_pt;
 }; // end_of_problem_class
 
 
 template<class ELEMENT>
 UnstructuredFvKProblem<ELEMENT>::UnstructuredFvKProblem(double element_area)
 :
-Element_area(element_area)
+Element_area(element_area),
+Investigate_eigen_cross(false),
+Use_centre_point_as_pin(false),
+Is_wrinkled(false)
 {
 Vector<double> zeta(1);
 Vector<double> posn(2);
@@ -1177,42 +1189,43 @@ Vector<double> posn(2);
 
 double A = 1.0;
 double B = 1.0;
-Ellipse* outer_boundary_ellipse_pt = new Ellipse(A, B);
 
-TriangleMeshClosedCurve* outer_boundary_pt = 0;
-
-Vector<TriangleMeshCurveSection*> outer_curvilinear_boundary_pt(2);
+// Initialize
+Outer_boundary_ellipse_pt = new Ellipse(A, B);
+Outer_boundary_pt = 0;
+// Boundary specified in two parts
+Outer_curvilinear_boundary_pt.resize(2);
 
 //First bit
 double zeta_start = 0.0;
 double zeta_end = MathematicalConstants::Pi;
 unsigned nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
-outer_curvilinear_boundary_pt[0] =
-new TriangleMeshCurviLine(outer_boundary_ellipse_pt, zeta_start,
+Outer_curvilinear_boundary_pt[0] =
+new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary0);
 
 //Second bit
 zeta_start = MathematicalConstants::Pi;
 zeta_end = 2.0*MathematicalConstants::Pi;
 nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
-outer_curvilinear_boundary_pt[1] =
-new TriangleMeshCurviLine(outer_boundary_ellipse_pt, zeta_start,
+Outer_curvilinear_boundary_pt[1] =
+new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary1);
 
-outer_boundary_pt =
-new TriangleMeshClosedCurve(outer_curvilinear_boundary_pt);
+Outer_boundary_pt =
+new TriangleMeshClosedCurve(Outer_curvilinear_boundary_pt);
 
 // Internal open boundaries
 // Total number of open curves in the domain
 unsigned n_open_curves = 1;
 // We want internal open curves
-Vector<TriangleMeshOpenCurve *> inner_open_boundaries_pt(n_open_curves);
+Inner_open_boundaries_pt.resize(n_open_curves);
 
 //Create the mesh
 //---------------
 //Create mesh parameters object
-TriangleMeshParameters mesh_parameters(outer_boundary_pt);
-TriangleMeshPolyLine *boundary2_pt = 0;
+TriangleMeshParameters mesh_parameters(Outer_boundary_pt);
+Boundary2_pt = 0;
 
 // Internal bit - this means we can have a boundary which is just the centre
 if(Use_centre_point_as_pin)
@@ -1227,22 +1240,22 @@ if(Use_centre_point_as_pin)
  vertices[1][0] = 0.5;
  vertices[1][1] = 0.0;
  unsigned boundary_id = Inner_boundary0;
- boundary2_pt =
+ Boundary2_pt =
    new TriangleMeshPolyLine(vertices, boundary_id);
 
 // Each inteTriangleMeshPolyLine *boundary2_ptrnal open curve is defined by a vector of
 // TriangleMeshCurveSection,
 // on this example we only need one curve section for each internal boundary
- Vector<TriangleMeshCurveSection *> internal_curve_section1_pt(1);
- internal_curve_section1_pt[0] = boundary2_pt;
+ Internal_curve_section1_pt.resize(1);
+ Internal_curve_section1_pt[0] = Boundary2_pt;
 
 // The open curve that define this boundary is composed of just one
 // curve section
- inner_open_boundaries_pt[0] =
-    new TriangleMeshOpenCurve(internal_curve_section1_pt);
+ Inner_open_boundaries_pt[0] =
+    new TriangleMeshOpenCurve(Internal_curve_section1_pt);
 
 // Specify the internal open boundaries
-mesh_parameters.internal_open_curves_pt() = inner_open_boundaries_pt;
+mesh_parameters.internal_open_curves_pt() = Inner_open_boundaries_pt;
 }
 
 // Specify the element area
@@ -1280,13 +1293,6 @@ Trace_file.open(filename);
 oomph_info << "Number of equations: "
         << assign_eqn_numbers() << '\n';
 
-delete outer_boundary_pt;
-delete outer_boundary_ellipse_pt;
-delete outer_curvilinear_boundary_pt[0];
-delete outer_curvilinear_boundary_pt[1];
-delete inner_open_boundaries_pt[0];
-if(boundary2_pt!=0)
- delete boundary2_pt;
 }
 
 
@@ -1358,14 +1364,11 @@ el_pt->d_pressure_dr_fct_pt() = &TestSoln::get_d_pressure_dr;
 el_pt->d_pressure_d_grad_u_fct_pt() = &TestSoln::get_d_pressure_d_grad_u;
 el_pt->error_metric_fct_pt() = &TestSoln::error_metric;
 el_pt->multiple_error_metric_fct_pt() = &TestSoln::fourier_transform_metric;
-
 el_pt->thickness_pt() = &TestSoln::h;
+// Use a finite difference jacobian
+if(TestSoln::use_fd_jacobian)
+ el_pt->enable_finite_difference_jacobian();
 }
-
-// Loop over flux elements to pass pointer to prescribed traction function
-
-/// Set pointer to prescribed traction function for traction elements
-//set_prescribed_traction_pt();
 
 // Re-apply Dirichlet boundary conditions (projection ignores
 // boundary conditions!)
@@ -1392,7 +1395,10 @@ else
 // Upcast to first element
 ELEMENT* el_pt = dynamic_cast<ELEMENT*>(Bulk_mesh_pt->element_pt(0));
 
-for(unsigned ibound=0;ibound<nbound;ibound++)
+// Pin Rotations
+// Loop only over the first outer boundary (to avoid visiting the relevant node 
+// twice) 
+for(unsigned ibound=0;ibound<Outer_boundary1;ibound++)
 {
  // Local block
  unsigned num_nod=Bulk_mesh_pt->nboundary_node(ibound);
@@ -1400,15 +1406,23 @@ for(unsigned ibound=0;ibound<nbound;ibound++)
   {
   // First Node pt
   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(ibound,inod);
-  double x = nod_pt->x(0), y = nod_pt->x(1), tol = 1e-13;
-  if((y-1.0)*(y-1.0)< tol &&(x-0.0)*(x-0.0)< tol)//HERE LOCAL TOL
+  double x = nod_pt->x(0), y = nod_pt->x(1);
+  // Pin Rotations by pinning Uy at Node at (1,0) 
+  if(nod_pt->is_on_boundary(Outer_boundary0) && nod_pt->is_on_boundary(Outer_boundary1)
+     && x > 0 )
     {
      oomph_info<<"Found node: ("<<x<<","<<y<<")\n Pinning to zero."<<std::endl;
-     nod_pt->pin(0);
-     nod_pt->set_value(0,0.0);
+     nod_pt->pin(6);
+     nod_pt->set_value(6,0.0);
     }
   }
+}
 
+// Loop Boundaries
+for(unsigned ibound=0;ibound<nbound;ibound++)
+{
+// Local block
+unsigned num_nod=Bulk_mesh_pt->nboundary_node(ibound);
 for (unsigned inod=0;inod<num_nod;inod++)
 {
  // Get node
@@ -1437,13 +1451,6 @@ for (unsigned inod=0;inod<num_nod;inod++)
 } 
 
 } // end set bc
-
-template <class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::
-create_traction_elements(const unsigned &b, Mesh* const &bulk_mesh_pt, 
-                             Mesh* const &surface_mesh_pt)
-{
-}// end create traction elements
 
 template <class ELEMENT>
 void UnstructuredFvKProblem<ELEMENT>::
@@ -1612,15 +1619,6 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
  }
 }// end create traction elements
 
-//==start_of_set_prescribed_traction_pt===================================
-/// Set pointer to prescribed traction function for all elements in the 
-/// surface mesh
-//========================================================================
-template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::set_prescribed_traction_pt()
-{
-}// end of set prescribed flux pt
-
 //==start_of_doc_solution=================================================
 /// Doc the solution
 //========================================================================
@@ -1744,31 +1742,51 @@ Doc_info.number()++;
 
 } // end of doc
 
-//============start_of_delete_flux_elements==============================
-/// Delete Poisson Flux Elements and wipe the surface mesh
-//=======================================================================
+//==start_of_doc_solution=================================================
+/// Doc the solution
+//========================================================================
 template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>
-::delete_traction_elements(Mesh* const &surface_mesh_pt)
+void UnstructuredFvKProblem<ELEMENT>::print_jacobian()
 {
-// How many surface elements are in the surface mesh
-unsigned n_element = surface_mesh_pt->nelement();
+ // Print the Jacobian
+ describe_dofs();
+ oomph_info << "----------PRINTING JACOBIAN-----------" << std::endl;
+ DoubleVector residuals;
+ CRDoubleMatrix jac;
+ get_jacobian(residuals,jac);
+ jac.sort_entries();
+ 
+ // Open filestream, high precision
+ std::ofstream filestream;
+ filestream.precision(15);
+ // Filename
+ char jacobian_filename[100];
+ sprintf(jacobian_filename, "%s/%s.csv",Doc_info.directory().c_str(),
+  (TestSoln::use_fd_jacobian? "jacobian_fd":"jacobian_exact"));
+ filestream.open(jacobian_filename);
+ filestream.precision(15);
+ filestream << " # name: jac" << "\n"
+            << "  # type: sparse matrix"<< "\n"
+            << "  # nnz:" << jac.nnz() <<"\n"
+            << "  # rows:" << jac.nrow() <<"\n"
+            << "  # columns:" << jac.ncol() <<std::endl;
 
-// Loop over the surface elements
-for(unsigned e=0;e<n_element;e++)
-{
-// Kill surface element
-delete surface_mesh_pt->element_pt(e);
+ // Output
+  for (unsigned long i=0;i<jac.nrow();i++)
+   {
+    for (long j=jac.row_start()[i];j<jac.row_start()[i+1];j++)
+     {
+      // Output transpose so columns are grouped
+      filestream << jac.column_index()[j]+1 << " " << i+1 << " " << jac.value()[j]
+              << std::endl;
+     }
+   }
 }
 
-// Wipe the mesh
-surface_mesh_pt->flush_element_and_node_storage();
-
-} // end of delete_flux_elements
-
+// Extend the namespace to write a checkpoint
 namespace TestSoln{
 // Problem_pt
-UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,
+UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,
 KoiterSteigmannPlateEquations> >* problem_pt=0;
 
 static void write_checkpoint()
@@ -1829,6 +1847,9 @@ int main(int argc, char **argv)
 
  // Validation?
  CommandLineArgs::specify_command_line_flag("--validation");
+ 
+ // Use FD Jacobian?
+ CommandLineArgs::specify_command_line_flag("--use_fd_jacobian");
 
  // Physical Parameters
  CommandLineArgs::specify_command_line_flag("--p", &TestSoln::p_mag);
@@ -1906,7 +1927,10 @@ int main(int argc, char **argv)
 
  // Save disk space flag
  TestSoln::save_disk_space =CommandLineArgs::command_line_flag_has_been_set("--save_disk_space");
+ // Do h loop at const vk pressure 
  bool do_h_loop_const_vk_pressure = CommandLineArgs::command_line_flag_has_been_set("--keep_vk_pressure_constant");
+ // Do fd jacobian
+ TestSoln::use_fd_jacobian =CommandLineArgs::command_line_flag_has_been_set("--use_fd_jacobian");
  // Dump at every step flag
  TestSoln::dump_at_every_step=CommandLineArgs::command_line_flag_has_been_set("--dump_at_every_step");
 
@@ -1938,7 +1962,7 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
  double first_p = p_start;
 
  // Problem instance
- UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
+ UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,KoiterSteigmannPlateEquations> >problem(element_area);
  // Set pointer to the problem
  TestSoln::problem_pt = &problem;
 
@@ -1954,6 +1978,8 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
    // Downcast to ARPACK*
    ARPACK* arpack_pt=(dynamic_cast<ARPACK*>(problem.eigen_solver_pt()));
    arpack_pt->narnoldi() = TestSoln::Arnoldi_multiple * TestSoln::neig;
+   // Look for LARGE eigenvalues in shift inverted system i.e smallest eigenvalues
+   arpack_pt->get_eigenvalues_right_of_shift();
   }
  // Change some tolerances
  problem.max_residuals()=1e10;
@@ -2028,6 +2054,7 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
   problem.newton_solve();
  } 
 
+//  problem.print_jacobian();
 
  // Loop to get to target pressure
  // problem.loop_until_target_pressure(first_p,p_end,(p_end-p_start)/(n_step));
