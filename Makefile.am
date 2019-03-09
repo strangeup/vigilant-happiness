@@ -2,6 +2,9 @@
 # have to be installed anywhere.
 noinst_PROGRAMS =  circular_disc_rolling_clamp_ks circular_disc_full_clamp_ks
 include $(top_srcdir)/config/makefile_templates/demo_drivers
+
+GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
+
 #---------------------------------------------------------------------------
 
 # Local sources that circular_cap_fvk code depends on:
@@ -18,6 +21,8 @@ circular_disc_rolling_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_
 
 circular_disc_full_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
  -lC1_basis -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
+
+circular_disc_rolling_clamp_ks_LDFLAGS = -all-static 
 
 # Local sources that Jack's own code depends on: This code also uses
 # objects from Jack's own library. The source code for this library
@@ -40,5 +45,5 @@ circular_disc_full_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_mod
 # Automake will replace the variable @includedir@ with the actual
 # include directory.
 
-AM_CPPFLAGS += -I@includedir@ -I$(pathtoeigen) -I$(pathtospectra) -Wall #-g -DRANGE_CHECK -DPARANOID
+AM_CPPFLAGS += -I@includedir@ -I$(pathtoeigen) -I$(pathtospectra) -Wall -DGITVERSION=\"$(GIT_VERSION)\" #-g #-DRANGE_CHECK -DPARANOID
 #EXTRA_DIST = Circle1.1.ele Circle1.1.node Circle1.1.poly

@@ -1918,6 +1918,10 @@ static void write_checkpoint()
 //============================================================
 int main(int argc, char **argv)
 {
+ // Print the git version using the Makefile MACRO
+ printf("Version: %s\n", GITVERSION);
+ printf("Binary build date: %s @ %s\n", __DATE__, __TIME__);
+
  // Catch soft kill signal from Condor and checkpoint if we get evicted 
  signal(SIGTERM, TestSoln::signal_handler);
 
