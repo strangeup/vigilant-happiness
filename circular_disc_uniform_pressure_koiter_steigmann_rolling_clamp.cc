@@ -249,17 +249,36 @@ UnstructuredFvKProblem(double element_area = 0.1);
 /// Destructor
 ~UnstructuredFvKProblem()
 {
+ // Clean up mesh
  delete (Surface_mesh_pt);
+ Surface_mesh_pt = 0;
  delete (Bulk_mesh_pt);
- // Clean up mesh parameters
+ Bulk_mesh_pt = 0;
+ // Clean up mesh parameters for outer boundary
  delete Outer_boundary_pt;
+ Outer_boundary_pt =0;
  delete Outer_boundary_ellipse_pt;
+ Outer_boundary_ellipse_pt = 0;
  delete Outer_curvilinear_boundary_pt[0];
+ Outer_curvilinear_boundary_pt[0] =0;
  delete Outer_curvilinear_boundary_pt[1];
+ Outer_curvilinear_boundary_pt[1] =0;
+ // Clean up mesh parameters for internal boundary
+ delete Inner_boundary_pt[0];
+ Inner_boundary_pt[0] = 0;
+ delete Inner_boundary_ellipse_pt;
+ Inner_boundary_ellipse_pt = 0;
+ delete Inner_curvilinear_boundary_pt[0];
+ Inner_curvilinear_boundary_pt[0]= 0;
+ delete Inner_curvilinear_boundary_pt[1];
+ Inner_curvilinear_boundary_pt[1]= 0;
+ // Clean up mesh parameters for internal line
  delete Inner_open_boundaries_pt[0];
+ Inner_open_boundaries_pt[0] = 0;
  // Check it's not 0
  if(Boundary2_pt!=0)
-  delete Boundary2_pt;
+   { delete Boundary2_pt; }
+ Boundary2_pt = 0;
 };
 
 void actions_after_read_unstructured_meshes()
