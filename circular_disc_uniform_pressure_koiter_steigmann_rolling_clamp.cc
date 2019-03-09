@@ -224,6 +224,9 @@ double Arnoldi_multiple = 2;
 
 // Use a fd jacobian
 bool use_fd_jacobian = true;
+
+// Dump the triangulateio object
+bool Dump_triangulateio = false;
 }
 
 ///////////////////////////////////////////////////////////
@@ -346,16 +349,17 @@ void pin_first_point()
 void pin_centre_point()
  {
   // Loop over internal boundary
-  unsigned num_nod=Bulk_mesh_pt->nboundary_node(2);
+  unsigned num_nod=Bulk_mesh_pt->nboundary_node(Inner_boundary2);
   for (unsigned inod=0;inod<num_nod;inod++)
   {
    // Get nod
-   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(2,inod);
+   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(Inner_boundary2,inod);
    Vector<double> x(2,0.0);
    x[0]=nod_pt->x(0);
    x[1]=nod_pt->x(1);
    // If its in the centre
-   if(x[0]*x[0]+x[1]*x[1]<1e-12)
+   const double tol = 1e-20;
+   if(x[0]*x[0]+x[1]*x[1]<tol)
     {
      oomph_info <<"Found centre: "<<x<<std::endl;
      oomph_info <<"Pinning inplane displacements and setting to zero."<<std::endl;
@@ -1137,7 +1141,9 @@ enum
 {
  Outer_boundary0 = 0,
  Outer_boundary1 = 1,
- Inner_boundary0 = 2
+ Inner_boundary0 = 2,
+ Inner_boundary1 = 3,
+ Inner_boundary2 = 4
 };
 
 /// Element area data
@@ -1164,9 +1170,15 @@ TriangleMesh<ELEMENT>* Bulk_mesh_pt;
 Mesh* Surface_mesh_pt;
 
 /// Pointers to mesh objects
+// Outer Ellipse objects
 Ellipse* Outer_boundary_ellipse_pt;
 TriangleMeshClosedCurve* Outer_boundary_pt;
 Vector<TriangleMeshCurveSection*> Outer_curvilinear_boundary_pt;
+// Inner Ellipse objects
+Ellipse* Inner_boundary_ellipse_pt;
+Vector<TriangleMeshClosedCurve*> Inner_boundary_pt;
+Vector<TriangleMeshCurveSection*> Inner_curvilinear_boundary_pt;
+// Inner Line objects
 Vector<TriangleMeshOpenCurve *> Inner_open_boundaries_pt;
 TriangleMeshPolyLine* Boundary2_pt;
 Vector<TriangleMeshCurveSection *> Internal_curve_section1_pt;
@@ -1178,9 +1190,14 @@ UnstructuredFvKProblem<ELEMENT>::UnstructuredFvKProblem(double element_area)
 :
 Element_area(element_area),
 Investigate_eigen_cross(false),
-Use_centre_point_as_pin(false),
+Use_centre_point_as_pin(true),
 Is_wrinkled(false)
 {
+// Parameters for internal boundary
+double inner_radius = 4./5. ; // 0.7 ; // 4./5.;
+double outer_element_area = element_area;
+double inner_element_area = element_area * 10. ;//3.; // 10
+// Preinitialise
 Vector<double> zeta(1);
 Vector<double> posn(2);
 
@@ -1189,9 +1206,8 @@ Vector<double> posn(2);
 
 double A = 1.0;
 double B = 1.0;
-
-// Initialize
 Outer_boundary_ellipse_pt = new Ellipse(A, B);
+// Initialize
 Outer_boundary_pt = 0;
 // Boundary specified in two parts
 Outer_curvilinear_boundary_pt.resize(2);
@@ -1199,7 +1215,7 @@ Outer_curvilinear_boundary_pt.resize(2);
 //First bit
 double zeta_start = 0.0;
 double zeta_end = MathematicalConstants::Pi;
-unsigned nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
+unsigned nsegment = (int)(MathematicalConstants::Pi/sqrt(outer_element_area));
 Outer_curvilinear_boundary_pt[0] =
 new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary0);
@@ -1207,13 +1223,44 @@ zeta_end, nsegment, Outer_boundary0);
 //Second bit
 zeta_start = MathematicalConstants::Pi;
 zeta_end = 2.0*MathematicalConstants::Pi;
-nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
+nsegment = (int)(MathematicalConstants::Pi/sqrt(outer_element_area));
 Outer_curvilinear_boundary_pt[1] =
 new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary1);
 
 Outer_boundary_pt =
 new TriangleMeshClosedCurve(Outer_curvilinear_boundary_pt);
+
+
+// Inner boundary
+//--------------
+
+A = inner_radius;
+B = inner_radius;
+Inner_boundary_ellipse_pt = new Ellipse(A, B);
+// Boundary specified in two parts
+Inner_boundary_pt.resize(1);
+Inner_curvilinear_boundary_pt.resize(2);
+
+//First bit
+zeta_start = 0.0;
+zeta_end = MathematicalConstants::Pi;
+nsegment = (int)(inner_radius*MathematicalConstants::Pi/sqrt(outer_element_area));
+Inner_curvilinear_boundary_pt[0] =
+new TriangleMeshCurviLine(Inner_boundary_ellipse_pt, zeta_start,
+zeta_end, nsegment, Inner_boundary0);
+
+//Second bit
+zeta_start = MathematicalConstants::Pi;
+zeta_end = 2.0*MathematicalConstants::Pi;
+nsegment = (int)(inner_radius*MathematicalConstants::Pi/sqrt(outer_element_area));
+Inner_curvilinear_boundary_pt[1] =
+new TriangleMeshCurviLine(Inner_boundary_ellipse_pt, zeta_start,
+zeta_end, nsegment, Inner_boundary1);
+
+ //Combine to internal curvilinear boundary
+Inner_boundary_pt[0] =
+new TriangleMeshClosedCurve(Inner_curvilinear_boundary_pt);
 
 // Internal open boundaries
 // Total number of open curves in the domain
@@ -1239,10 +1286,10 @@ if(Use_centre_point_as_pin)
  
  vertices[1][0] = 0.5;
  vertices[1][1] = 0.0;
- unsigned boundary_id = Inner_boundary0;
+ unsigned boundary_id = Inner_boundary2;
  Boundary2_pt =
    new TriangleMeshPolyLine(vertices, boundary_id);
-
+// 
 // Each inteTriangleMeshPolyLine *boundary2_ptrnal open curve is defined by a vector of
 // TriangleMeshCurveSection,
 // on this example we only need one curve section for each internal boundary
@@ -1258,8 +1305,15 @@ if(Use_centre_point_as_pin)
 mesh_parameters.internal_open_curves_pt() = Inner_open_boundaries_pt;
 }
 
+// Add internal boundary
+mesh_parameters.internal_closed_curve_pt() = Inner_boundary_pt;
+// Add region
+Vector<double> outer(2);
+outer[0] =  (1.0+inner_radius)/2.;
+mesh_parameters.add_region_coordinates(1,outer);
 // Specify the element area
-mesh_parameters.element_area() = element_area;
+mesh_parameters.set_target_area_for_region(1,outer_element_area);
+mesh_parameters.element_area() = inner_element_area;
 
 // Build an assign bulk mesh
 Bulk_mesh_pt=new TriangleMesh<ELEMENT>(mesh_parameters);
@@ -1293,6 +1347,14 @@ Trace_file.open(filename);
 oomph_info << "Number of equations: "
         << assign_eqn_numbers() << '\n';
 
+// Dump the mesh
+if(TestSoln::Dump_triangulateio)
+{
+ std::ofstream os;
+ std::string nom ("dump");
+ TriangulateIO tio = Bulk_mesh_pt->triangulateio_representation();
+ Bulk_mesh_pt->write_triangulateio(tio,nom);
+}
 }
 
 
@@ -1504,7 +1566,7 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
     {
      // If it is on boundary
      Node* nod_pt = bulk_el_pt->node_pt(n);
-     if(nod_pt->is_on_boundary(0) || nod_pt->is_on_boundary(1))
+     if(nod_pt->is_on_boundary(Outer_boundary0) || nod_pt->is_on_boundary(Outer_boundary1))
       {
        xn[n][0]=nod_pt->x(0);
        xn[n][1]=nod_pt->x(1);
@@ -1579,11 +1641,11 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
    // Count the number of boundary nodes
    for (unsigned n=0; n<nnode;++n)
      {
-      // Check it isn't on an internal boundary
-      bool on_boundary_2=el_pt->node_pt(n)->is_on_boundary(2);
-      bool on_boundary_3=el_pt->node_pt(n)->is_on_boundary(3);
-      if(!(on_boundary_2 || on_boundary_3))
-       {nbnode+=unsigned(el_pt->node_pt(n)->is_on_boundary());}
+      // Check if it is on the curved boundaries
+      bool on_boundary_0=el_pt->node_pt(n)->is_on_boundary(Outer_boundary0);
+      bool on_boundary_1=el_pt->node_pt(n)->is_on_boundary(Outer_boundary1);
+      if(on_boundary_0 || on_boundary_1 )
+       {nbnode+=1;}
      }
 
    // Now if we have nodes on boundary 
@@ -1597,9 +1659,10 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
      for (unsigned n=0; n<nnode;++n)
       {
        // Check it isn't on an internal boundary
-       bool on_boundary_2=el_pt->node_pt(n)->is_on_boundary(2);
-       bool on_boundary_3=el_pt->node_pt(n)->is_on_boundary(3);
-       if(!(on_boundary_2 || on_boundary_3))
+      // Check if it is on the curved boundaries
+      bool on_boundary_0=el_pt->node_pt(n)->is_on_boundary(Outer_boundary0);
+      bool on_boundary_1=el_pt->node_pt(n)->is_on_boundary(Outer_boundary1);
+      if(on_boundary_0 || on_boundary_1 )
        {
        // If it is on the boundary
        if(el_pt->node_pt(n)->is_on_boundary())
@@ -1851,6 +1914,9 @@ int main(int argc, char **argv)
  // Use FD Jacobian?
  CommandLineArgs::specify_command_line_flag("--use_fd_jacobian");
 
+ // Dump Triangulateio?
+ CommandLineArgs::specify_command_line_flag("--dump_triangulateio");
+
  // Physical Parameters
  CommandLineArgs::specify_command_line_flag("--p", &TestSoln::p_mag);
 
@@ -1859,7 +1925,7 @@ int main(int argc, char **argv)
  CommandLineArgs::specify_command_line_flag("--h", &TestSoln::h);
 
  // Stepping parameters
- unsigned n_step=2;//11;
+ unsigned n_step=2;
  CommandLineArgs::specify_command_line_flag("--n_step", &n_step);
 
  unsigned n_h_step = 0;
@@ -1927,6 +1993,8 @@ int main(int argc, char **argv)
 
  // Save disk space flag
  TestSoln::save_disk_space =CommandLineArgs::command_line_flag_has_been_set("--save_disk_space");
+ // Dump Triangulateio
+ TestSoln::Dump_triangulateio =CommandLineArgs::command_line_flag_has_been_set("--dump_triangulateio");
  // Do h loop at const vk pressure 
  bool do_h_loop_const_vk_pressure = CommandLineArgs::command_line_flag_has_been_set("--keep_vk_pressure_constant");
  // Do fd jacobian
