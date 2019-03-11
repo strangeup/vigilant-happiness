@@ -362,6 +362,13 @@ UnstructuredFvKProblem(double element_area = 0.1);
 {
  delete (Surface_mesh_pt);
  delete (Bulk_mesh_pt);
+ // Clean up mesh parameters
+ delete Outer_boundary_pt;
+ delete Outer_boundary_ellipse_pt;
+ delete Outer_curvilinear_boundary_pt[0];
+ delete Outer_curvilinear_boundary_pt[1];
+ delete Inner_open_boundaries_pt[0];
+ delete Boundary2_pt;
  
 };
 
@@ -475,6 +482,13 @@ for(unsigned e=0;e<n_element;e++)
 } // end set bc
 private:
 
+// Mesh parameters
+Ellipse* Outer_boundary_ellipse_pt;
+TriangleMeshClosedCurve* Outer_boundary_pt;
+Vector<TriangleMeshCurveSection*> Outer_curvilinear_boundary_pt;
+Vector<TriangleMeshOpenCurve *> Inner_open_boundaries_pt;
+TriangleMeshPolyLine* Boundary2_pt;
+
 /// Helper function to apply boundary conditions
 void apply_boundary_conditions();
 
@@ -526,36 +540,37 @@ Vector<double> posn(2);
 
 double A = 1.0;
 double B = 1.0;
-Ellipse* outer_boundary_ellipse_pt = new Ellipse(A, B);
+// Initialize
+Outer_boundary_ellipse_pt = new Ellipse(A, B);
+Outer_boundary_pt = 0;
+Outer_curvilinear_boundary_pt.resize(2);
+// We want internal open curves
+// Internal open boundaries
+// Total number of open curves in the domain
+unsigned n_open_curves = 1;
+Inner_open_boundaries_pt.resize(n_open_curves);
+Boundary2_pt =  0;
 
-TriangleMeshClosedCurve* outer_boundary_pt = 0;
-
-Vector<TriangleMeshCurveSection*> outer_curvilinear_boundary_pt(2);
 
 //First bit
 double zeta_start = 0.0;
 double zeta_end = MathematicalConstants::Pi;
 unsigned nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
-outer_curvilinear_boundary_pt[0] =
-new TriangleMeshCurviLine(outer_boundary_ellipse_pt, zeta_start,
+Outer_curvilinear_boundary_pt[0] =
+new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary0);
 
 //Second bit
 zeta_start = MathematicalConstants::Pi;
 zeta_end = 2.0*MathematicalConstants::Pi;
 nsegment = (int)(MathematicalConstants::Pi/sqrt(element_area));
-outer_curvilinear_boundary_pt[1] =
-new TriangleMeshCurviLine(outer_boundary_ellipse_pt, zeta_start,
+Outer_curvilinear_boundary_pt[1] =
+new TriangleMeshCurviLine(Outer_boundary_ellipse_pt, zeta_start,
 zeta_end, nsegment, Outer_boundary1);
 
-outer_boundary_pt =
-new TriangleMeshClosedCurve(outer_curvilinear_boundary_pt);
+Outer_boundary_pt =
+new TriangleMeshClosedCurve(Outer_curvilinear_boundary_pt);
 
-// Internal open boundaries
-// Total number of open curves in the domain
-unsigned n_open_curves = 1;
-// We want internal open curves
-Vector<TriangleMeshOpenCurve *> inner_open_boundaries_pt(n_open_curves);
 
 // Internal bit - this means we can have a boundary which is just the centre
 // We start by creating the internal boundaries
@@ -568,27 +583,26 @@ Vector<TriangleMeshOpenCurve *> inner_open_boundaries_pt(n_open_curves);
  vertices[1][0] = 0.5;
  vertices[1][1] = 0.0;
  unsigned boundary_id = Inner_boundary0;
- TriangleMeshPolyLine *boundary2_pt =
-   new TriangleMeshPolyLine(vertices, boundary_id);
+ Boundary2_pt =  new TriangleMeshPolyLine(vertices, boundary_id);
 
 // Each internal open curve is defined by a vector of
 // TriangleMeshCurveSection,
 // on this example we only need one curve section for each internal boundary
  Vector<TriangleMeshCurveSection *> internal_curve_section1_pt(1);
- internal_curve_section1_pt[0] = boundary2_pt;
+ internal_curve_section1_pt[0] = Boundary2_pt;
 
 // The open curve that define this boundary is composed of just one
 // curve section
- inner_open_boundaries_pt[0] =
+ Inner_open_boundaries_pt[0] =
     new TriangleMeshOpenCurve(internal_curve_section1_pt);
 
 //Create the mesh
 //---------------
 //Create mesh parameters object
-TriangleMeshParameters mesh_parameters(outer_boundary_pt);
+TriangleMeshParameters mesh_parameters(Outer_boundary_pt);
 
 // Specify the internal open boundaries
-mesh_parameters.internal_open_curves_pt() = inner_open_boundaries_pt;
+mesh_parameters.internal_open_curves_pt() = Inner_open_boundaries_pt;
 // Specify the element area
 mesh_parameters.element_area() = element_area;
 
@@ -624,12 +638,6 @@ Trace_file.open(filename);
 oomph_info << "Number of equations: "
         << assign_eqn_numbers() << '\n';
 
-delete outer_boundary_pt;
-delete outer_boundary_ellipse_pt;
-delete outer_curvilinear_boundary_pt[0];
-delete outer_curvilinear_boundary_pt[1];
-delete inner_open_boundaries_pt[0];
-delete boundary2_pt;
 }
 
 
@@ -1094,7 +1102,7 @@ Doc_info.number()++;
 // Namespace extension
 namespace TestSoln{
 // Problem_pt
-UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,
+UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,
 KoiterSteigmannPlateEquations> >* problem_pt=0;
 
 static void write_checkpoint()
@@ -1183,7 +1191,7 @@ int main(int argc, char **argv)
  // Applied Pressure
  CommandLineArgs::specify_command_line_flag("--p", &TestSoln::p_mag);
 
- double displ_target;
+ double displ_target = 0;
  TestSoln::displ_outer = 0;
  CommandLineArgs::specify_command_line_flag("--u_outer",&displ_target);
 
@@ -1294,7 +1302,7 @@ Fix this and rerun. Exiting Script."<<std::endl;
 
  // Problem instance
  // UnstructuredFvKProblem<KoiterSteigmannC1CurvedBellElement<2,2,5> >problem(element_area);
- UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,KoiterSteigmannPlateEquations> >problem(element_area);
+ UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,KoiterSteigmannPlateEquations> >problem(element_area);
  // Set pointer to the problem
  // Set pointer to the problem
  TestSoln::problem_pt = &problem;

@@ -24,6 +24,8 @@ circular_disc_full_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_mod
 
 circular_disc_rolling_clamp_ks_LDFLAGS = -all-static 
 
+circular_disc_full_clamp_ks_LDFLAGS = -all-static 
+
 # Local sources that Jack's own code depends on: This code also uses
 # objects from Jack's own library. The source code for this library
 # lives in user_src/jack_cool and gets compiled in to the jack_cool 
