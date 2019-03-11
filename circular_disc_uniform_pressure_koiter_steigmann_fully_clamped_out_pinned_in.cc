@@ -70,6 +70,11 @@ Outer_stretch_type mode = radial_stretch;
 CurvilineCircleTop parametric_curve_top;
 CurvilineCircleBottom parametric_curve_bottom;
 
+// Use a Mathematica friendly alias for std::pow
+template<typename T1, typename T2>
+double Power(const T1& arg, const T2& exp)
+{ return std::pow(arg,exp); }
+
 // Assigns the value of pressure depending on the position (x,y)
 void get_pressure(const Vector<double>& xi,const Vector<double>& ui,
  const DenseMatrix<double>& dui_dxj,  const Vector<double>& ni, 
@@ -111,34 +116,6 @@ inline void get_d_pressure_d_grad_u(const Vector<double>& xi,const Vector<double
  const DenseMatrix<double>& dui_dxj,
  const Vector<double>& ni, RankThreeTensor<double>& d_pressure_du_grad)
 {
-// RankThreeTensor<double> d_non_unit_ni_d_u_grad(3,3,2,0.0);
-// d_non_unit_ni_d_u_grad(0,1,0) = dui_dxj(2,1);
-// d_non_unit_ni_d_u_grad(0,2,1) = dui_dxj(1,0);
-// d_non_unit_ni_d_u_grad(0,2,0) =-(1.0+dui_dxj(1,1));
-// d_non_unit_ni_d_u_grad(0,1,1) =-dui_dxj(2,0);
-//
-// d_non_unit_ni_d_u_grad(1,0,0) =-dui_dxj(2,1);
-// d_non_unit_ni_d_u_grad(1,2,1) =-(1.0+dui_dxj(0,0));
-// d_non_unit_ni_d_u_grad(1,2,0) = dui_dxj(0,1);
-// d_non_unit_ni_d_u_grad(1,0,1) = dui_dxj(2,0);
-//
-// d_non_unit_ni_d_u_grad(2,0,0) = (1.0+dui_dxj(1,1));
-// d_non_unit_ni_d_u_grad(2,1,1) = (1.0+dui_dxj(0,0));
-// d_non_unit_ni_d_u_grad(2,0,1) =-dui_dxj(1,0);
-// d_non_unit_ni_d_u_grad(2,1,0) = dui_dxj(1,0);
-//
-// for(unsigned i=0; i<3;++i)
-//  {
-//  for(unsigned j=0; j<3;++j)
-//   {
-//   for(unsigned alpha=0; alpha<3;++alpha)
-//    {
-//    d_pressure_du_grad(i,j,alpha) = /*h**/p_mag *
-//             d_non_unit_ni_d_u_grad(i,j,alpha); 
-//    }
-//   }
-//  }
-
   // This way doesn't need an intermediate variable
   d_pressure_du_grad(0,1,0) = p_mag*dui_dxj(2,1);
   d_pressure_du_grad(0,2,1) = p_mag*dui_dxj(1,0);
@@ -159,8 +136,6 @@ inline void get_d_pressure_d_grad_u(const Vector<double>& xi,const Vector<double
 void get_my_prestretch_solution(const Vector<double>& xi, Vector<double>& w)
 {
  const double x = xi[0], y = xi[1];
- // Create aliases
- double (*Power)(double base, int exponent) = &std::pow;
  
  w[0] = displ_outer*x; 
  w[1] = displ_outer; 
@@ -231,7 +206,7 @@ void mooney_rivlin_stress(const Vector<double>& x, const Vector<double>& u,
  // HERE STOP USING g and e interchangebaly - they may have different scales
  const double det_g = g(0,0)*g(1,1)-g(0,1)*g(1,0); 
  const double det_e = e(0,0)*e(1,1)-e(0,1)*e(1,0); 
- const double tr_g = g(0,0)+g(1,1); 
+ // const double tr_g = g(0,0)+g(1,1); 
  const double tr_e = e(0,0)+e(1,1);
  // NB det(g) = 4 det(e) + 2 Tr(e) +1  
  // Determinant of g squared minus one
@@ -248,9 +223,9 @@ void mooney_rivlin_stress(const Vector<double>& x, const Vector<double>& u,
   {
   for(unsigned beta=0;beta<2;++beta)
    {
-  //  // 2nd Piola Kirchhoff (Membrane) Stress for Mooney Rivlin model
-  //  stress(alpha,beta)=2*(c1+ c2 / det_g) * i2(alpha,beta) 
-  //       + 2*((- c1 - tr_g *c2) / pow(det_g,2) + c2)*cof_g(alpha,beta);
+   //  // 2nd Piola Kirchhoff (Membrane) Stress for Mooney Rivlin model
+   //  stress(alpha,beta)=2*(c1+ c2 / det_g) * i2(alpha,beta) 
+   //       + 2*((- c1 - tr_g *c2) / pow(det_g,2) + c2)*cof_g(alpha,beta);
     // For 2D:
     // Cof g = I2 + 2 Cof e
     // tr(g) = 2 + 2 tr(e)
@@ -323,7 +298,6 @@ void d_mooney_rivlin_stress(const Vector<double>& x, const Vector<double>& u,
 void random_fourier_mode_displacement(const double& theta, Vector<double>& ui)
  {
  // Create aliases
- // double (*Power)(double base, int exponent)(& std::pow);
  double (*Sin)(double theta)(& std::sin);
  double (*Cos)(double theta)(& std::cos);
  /**************************************************************/
@@ -497,46 +471,6 @@ for(unsigned e=0;e<n_element;e++)
    } 
   apply_boundary_conditions(); //Just in case 
 }
-// 
-// // Loop over all boundary nodes
-// //Just loop over outer boundary conditions
-// unsigned nbound = Outer_boundary1 + 1;
-// 
-// // Pin centre node
-// pin_centre_point();
-// 
-// // Upcast to first element
-// ELEMENT* el_pt = dynamic_cast<ELEMENT*>(Bulk_mesh_pt->element_pt(0));
-// 
-// for(unsigned ibound=0;ibound<nbound;ibound++)
-// {
-// unsigned num_nod=Bulk_mesh_pt->nboundary_node(ibound);
-// for (unsigned inod=0;inod<num_nod;inod++)
-// {
-//  // Get node
-//  Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(ibound,inod);
-//  
-//  // Extract nodal coordinates from node:
-//  Vector<double> x(2),w(18);
-//  x[0]=nod_pt->x(0);
-//  x[1]=nod_pt->x(1);
-// 
-//  // Pin unknown values (everything except for the second normal derivative)
-//  for(unsigned i=2;i<3;++i)
-//   {
-//    for(unsigned l=0;l<6;++l)
-//     {
-//     // Don't pin the second normal
-//     if(l != 3)  
-//      {
-//      unsigned index=el_pt->u_index_koiter_model(l,i);
-//      nod_pt->pin(index);
-//      nod_pt->set_value(index,w[index]);
-//      }
-//     }
-//   }
-// }
-// } 
 
 } // end set bc
 private:
@@ -561,25 +495,10 @@ enum
 
 double Element_area;
 
-// The extra members required for flux type boundary conditions.
-/// \short Number of "bulk" elements (We're attaching flux elements
-/// to bulk mesh --> only the first Nkirchhoff_elements elements in
-/// the mesh are bulk elements!)
-// unsigned Nkirchhoff_elements;
-
-/// \short Create bending moment elements on the b-th boundary of the
-/// problems mesh 
-void create_traction_elements(const unsigned &b, Mesh* const & bulk_mesh_py,
-                            Mesh* const &surface_mesh_pt);
-
 void upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const & 
  bulk_mesh_pt);
 
 void rotate_edge_degrees_of_freedom(Mesh* const &bulk_mesh_pt);
-
-
-/// \short Delete traction elements and wipe the surface mesh
-void delete_traction_elements(Mesh* const &surface_mesh_pt);
 
 /// \short Set pointer to prescribed-flux function for all elements
 /// in the surface mesh
@@ -819,11 +738,6 @@ el_pt->thickness_pt() = &TestSoln::h;
 
 }
 
-// Loop over flux elements to pass pointer to prescribed traction function
-
-/// Set pointer to prescribed traction function for traction elements
-//set_prescribed_traction_pt();
-
 // Re-apply Dirichlet boundary conditions (projection ignores
 // boundary conditions!)
 apply_boundary_conditions();
@@ -894,21 +808,6 @@ for (unsigned inod=0;inod<num_nod;inod++)
      }
     }
   }
-
- // Pin unknown values (everything except for the second normal derivative)
- for(unsigned i=2;i<3;++i)
-  {
-   for(unsigned l=0;l<6;++l)
-    {
-    // Don't pin the second normal (clamped)
-    if(l != 3)  
-     {
-     unsigned index=el_pt->u_index_koiter_model(l,i);
-     nod_pt->pin(index);
-     nod_pt->set_value(index,w[index]);
-     }
-    }
-  }
  // Pin unknown values (everything except for the second normal derivative)
  for(unsigned i=0;i<2;++i)
   {
@@ -928,12 +827,6 @@ for (unsigned inod=0;inod<num_nod;inod++)
 
 } // end set bc
 
-template <class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::
-create_traction_elements(const unsigned &b, Mesh* const &bulk_mesh_pt, 
-                             Mesh* const &surface_mesh_pt)
-{
-}// end create traction elements
 
 template <class ELEMENT>
 void UnstructuredFvKProblem<ELEMENT>::
@@ -1098,16 +991,7 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
    // Now rotate the nodes
    }
  }
-}// end create traction elements
-
-//==start_of_set_prescribed_traction_pt===================================
-/// Set pointer to prescribed traction function for all elements in the 
-/// surface mesh
-//========================================================================
-template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::set_prescribed_traction_pt()
-{
-}// end of set prescribed flux pt
+}// end create rotate elements
 
 //==start_of_doc_solution=================================================
 /// Doc the solution
@@ -1143,14 +1027,6 @@ Bulk_mesh_pt->output(some_file,npts);
 some_file << "TEXT X = 22, Y = 92, CS=FRAME T = \"" 
        << comment << "\"\n";
 some_file.close();
-
-// //  Output exact solution
-// sprintf(filename,"%s/exact_interpolated_soln%i-%f.dat","RESLT",Doc_info.number(),Element_area);
-// some_file.open(filename);
-// Bulk_mesh_pt->output_fct(some_file,npts,TestSoln::get_exact_w); 
-// some_file << "TEXT X = 22, Y = 92, CS=FRAME T = \"" 
-//        << comment << "\"\n";
-// some_file.close();
 
 // Output boundaries
 //------------------
@@ -1208,39 +1084,16 @@ some_file<<"##  Format: err^2 norm^2 log(err/norm) \n";
 some_file<< dummy_error <<" "<< zero_norm <<" ";
 
 // Only divide by norm if its nonzero
-//some_file<<0.5*(log10(fabs(dummy_error))-log10(zero_norm))<<"\n";
 some_file.close();
 }
 // Increment the doc_info number
 Doc_info.number()++;
 } // end of doc
 
-//============start_of_delete_flux_elements==============================
-/// Delete Poisson Flux Elements and wipe the surface mesh
-//=======================================================================
-template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>
-::delete_traction_elements(Mesh* const &surface_mesh_pt)
-{
-// How many surface elements are in the surface mesh
-unsigned n_element = surface_mesh_pt->nelement();
-
-// Loop over the surface elements
-for(unsigned e=0;e<n_element;e++)
-{
-// Kill surface element
-delete surface_mesh_pt->element_pt(e);
-}
-
-// Wipe the mesh
-surface_mesh_pt->flush_element_and_node_storage();
-
-} // end of delete_flux_elements
 
 // Namespace extension
 namespace TestSoln{
 // Problem_pt
-//UnstructuredFvKProblem<KoiterSteigmannC1CurvedBellElement<2,2,5> >* problem_pt=0;
 UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,5,
 KoiterSteigmannPlateEquations> >* problem_pt=0;
 
@@ -1309,7 +1162,7 @@ int main(int argc, char **argv)
  signal(SIGTERM, TestSoln::signal_handler);
 
  feenableexcept(FE_INVALID | FE_DIVBYZERO | FE_OVERFLOW | FE_UNDERFLOW);
-// Dodfy turn off all errors fedisableexcept(FE_ALL_EXCEPT); // somewhere early in main(), before the exception is happening 
+// Dodgy turn off all errors fedisableexcept(FE_ALL_EXCEPT); // somewhere early in main(), before the exception is happening 
 
  // Store command line arguments
  CommandLineArgs::setup(argc,argv);
@@ -1554,12 +1407,6 @@ Fix this and rerun. Exiting Script."<<std::endl;
   oomph_info<<"Restarting at iteration "<<i_start<<std::endl;
  } 
 
-//  for(double theta = 0; theta <2*3.141592654; theta += 0.1)
-//   {
-//    Vector<double> ui(18,0.0);
-//    TestSoln::random_fourier_mode_displacement(theta,ui);
-//    std::cout<< ui <<std::endl;
-//   }
 
  // DISPLACEMENT LOOP
  // Looping to get to the 
