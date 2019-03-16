@@ -1,6 +1,6 @@
 # Name of executables: The prefix "noinst" means the executables don't
 # have to be installed anywhere.
-noinst_PROGRAMS =  circular_disc_rolling_clamp_ks circular_disc_full_clamp_ks
+noinst_PROGRAMS =  circular_disc_rolling_clamp_ld circular_disc_full_clamp_ks
 include $(top_srcdir)/config/makefile_templates/demo_drivers
 
 GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
@@ -8,21 +8,21 @@ GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags)
 #---------------------------------------------------------------------------
 
 # Local sources that circular_cap_fvk code depends on:
-circular_disc_rolling_clamp_ks_SOURCES = \
-circular_disc_uniform_pressure_koiter_steigmann_rolling_clamp.cc
+circular_disc_rolling_clamp_ld_SOURCES = \
+circular_disc_uniform_pressure_large_displacement_plate_rolling_clamp.cc
 
 circular_disc_full_clamp_ks_SOURCES = \
 circular_disc_uniform_pressure_koiter_steigmann_fully_clamped_out_pinned_in.cc
 
 #---------------------------------------------------------------------------
 
-circular_disc_rolling_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
+circular_disc_rolling_clamp_ld_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
  -lC1_basis -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
 
 circular_disc_full_clamp_ks_LDADD = -L@libdir@ -lC1_large_displacement_plate_models \
  -lC1_basis -lgeneric $(EXTERNAL_LIBS) $(FLIBS)
 
-circular_disc_rolling_clamp_ks_LDFLAGS = -all-static 
+circular_disc_rolling_clamp_ld_LDFLAGS = -all-static 
 
 circular_disc_full_clamp_ks_LDFLAGS = -all-static 
 

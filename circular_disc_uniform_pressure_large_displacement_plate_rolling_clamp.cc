@@ -121,6 +121,37 @@ void get_pressure(const Vector<double>& xi,const Vector<double>& ui,
 }
 
 // Assigns the value of pressure depending on the position (x,y)
+void get_trunc_pressure(const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj,  const Vector<double>& ni, 
+ Vector<double>& pressure)
+{
+ // We are distributing the pressure over the deformed surface
+ // so the area element will be dA = \sqrt(det(g)) da with da the area element on
+ // the undeformed sheet. So a 'following' pressure will be p n_i dA
+ // or \sqrt(g) n_i da = r,x * r,y p da  with  * the cross product
+ Vector<double> non_unit_ni(3);
+ non_unit_ni[0] = - dui_dxj(2,0);
+ non_unit_ni[1] = - dui_dxj(2,1);
+ non_unit_ni[2] = (1.0+dui_dxj(0,0)+dui_dxj(1,1));
+  
+ for(unsigned i=0; i<3;++i)
+  {
+   // N.B Non dimensional  p = p* L / E h where p* is dimensional
+   pressure[i] = /*h**/p_mag*non_unit_ni[i]; 
+  }
+}
+
+// Pointer to pressure fct
+void (*pressure_fct_pt) (const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj,  const Vector<double>& ni, 
+ Vector<double>& pressure) =  &get_pressure ; 
+
+// Shorthand for d_pressure
+typedef void (*DPressure) (const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj, const Vector<double>& ni, 
+ DenseMatrix<double>& d_pressure_dn); 
+
+// Assigns the value of pressure depending on the position (x,y)
 inline void get_d_pressure_dn(const Vector<double>& xi,const Vector<double>& ui,
  const DenseMatrix<double>& dui_dxj, const Vector<double>& ni, 
  DenseMatrix<double>& d_pressure_dn)
@@ -153,6 +184,28 @@ inline void get_d_pressure_d_grad_u(const Vector<double>& xi,const Vector<double
   d_pressure_du_grad(2,0,1) =-p_mag*dui_dxj(1,0);
   d_pressure_du_grad(2,1,0) =-p_mag*dui_dxj(0,1);
 }
+
+// Assigns the value of pressure depending on the position (x,y)
+inline void get_d_trunc_pressure_d_grad_u(const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj,
+ const Vector<double>& ni, RankThreeTensor<double>& d_pressure_du_grad)
+{
+  // This way doesn't need an intermediate variable
+  d_pressure_du_grad(0,2,0) =-p_mag;
+  d_pressure_du_grad(1,2,1) =-p_mag;
+
+  d_pressure_du_grad(2,0,0) = p_mag;
+  d_pressure_du_grad(2,1,1) = p_mag;
+}
+
+// Pointer to get d_pressure
+DPressure d_pressure_dn_fct_pt = &get_d_pressure_dn; 
+// Pointer to get d_pressure
+DPressure d_pressure_dr_fct_pt= &get_d_pressure_dr; 
+// Pointer to get d_pressure ; 
+void (*d_pressure_d_grad_u_fct_pt)(const Vector<double>& xi,const Vector<double>& ui,
+ const DenseMatrix<double>& dui_dxj,
+ const Vector<double>& ni, RankThreeTensor<double>& d_pressure_du_grad) = &get_d_pressure_d_grad_u;
 
 // The normal and tangential directions.
 void get_normal_and_tangent(const Vector<double>& x, Vector<double>& n, 
@@ -233,21 +286,79 @@ bool Dump_triangulateio = false;
 ///////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////
 
+/// Class definition
+//====================================================================
+class LDBaseProblem : public Problem
+{
+public:
+
+/// Constructor
+LDBaseProblem(){};
+
+/// Destructor
+~LDBaseProblem(){} ;
+
+/// \short Plot error when compared against a given exact solution.
+///  Also returns the norm  of the error and that of the exact solution
+virtual void compute_error(std::ostream &outfile,
+                           FiniteElement::SteadyExactSolutionFctPt exact_soln_pt,
+                           Vector<double>& error, Vector<double>& norm) = 0 ;
+
+/// Doc the solution
+virtual void doc_solution(const std::string& comment="") = 0;
+
+// Recursion to find the singular value
+virtual void find_singular_p_value(const unsigned nneg_initial,
+ const std::pair<unsigned,unsigned>& nneg_bracket,
+ const std::pair<double,double>& p_bracket, const double& thresh,
+  bool& found_singular, int& depth) =0;
+
+virtual void loop_until_target_thickness(const double& initial_h, const double& target_h, const double& initial_dh) =0;
+
+// In this we keep the 'fvk nondimensional pressure constant' whilst modifying
+// the thickness - which effectively keeps us steady on for FvK on the bif.
+// diagram but will involve small changes for KS - should be favourable for
+// remaining on the same branch and h stepping
+virtual void loop_until_target_thickness_keep_fvk_pressure_constant
+  (const double& initial_h, const double& target_h, const double& initial_dh) =0;
+
+// Simple loop to target pressure
+virtual void loop_until_target_pressure(const double& initial_p, const double& target_p, const double& initial_dp) =0;
+
+// Solve the eigen problem - always finds the eigenvalue in the bracket that is
+// closest to zero
+virtual void solve_eigen_problem(unsigned& number_of_negative_eigenvalues, 
+  bool& found_singular, const double& thresh) = 0;
+
+virtual void print_jacobian() = 0;
+
+/// Doc info object for labeling output
+DocInfo Doc_info;
+
+protected:
+/// Helper function to apply boundary conditions
+virtual void apply_boundary_conditions() =0 ;
+
+/// \short Helper function to (re-)set boundary condition
+/// and complete the build of  all elements
+virtual void complete_problem_setup() = 0 ;
+
+}; // end_of_problem_class
 
 //==start_of_problem_class============================================
 /// Class definition
 //====================================================================
 template<class ELEMENT>
-class UnstructuredFvKProblem : public virtual Problem
+class UnstructuredLDProblem : public LDBaseProblem
 {
 
 public:
 
 /// Constructor
-UnstructuredFvKProblem(double element_area = 0.1);
+UnstructuredLDProblem(double element_area = 0.1);
 
 /// Destructor
-~UnstructuredFvKProblem()
+~UnstructuredLDProblem()
 {
  // Clean up mesh
  delete (Surface_mesh_pt);
@@ -325,13 +436,15 @@ virtual void compute_error(std::ostream &outfile,
  for(unsigned e=0;e<n_element;e++)
  {
   // Try to cast to FiniteElement
-  KoiterSteigmannPlateEquations<2,2>*
-el_pt=dynamic_cast<KoiterSteigmannPlateEquations<2,2>*>(Bulk_mesh_pt->element_pt(e));
+  LargeDisplacementPlateEquations<2,2>*
+  el_pt=dynamic_cast<LargeDisplacementPlateEquations<2,2>*>(Bulk_mesh_pt->element_pt(e));
+ //  FoepplVon*
+ //  el_pt=dynamic_cast<ELEMENT>(Bulk_mesh_pt->element_pt(e));
   if (el_pt==0)
    {
     throw OomphLibError(
      "Can't execute compute_error(...) with multiple errors for non \
-KoiterSteigmannPlateElements",
+LargeDisplacementPlateElements",
      OOMPH_CURRENT_FUNCTION,
      OOMPH_EXCEPTION_LOCATION);
    }
@@ -416,8 +529,6 @@ TriangleMesh<ELEMENT>* mesh_pt()
 return dynamic_cast<TriangleMesh<ELEMENT>*> (Problem::mesh_pt()); 
 }
 
-/// Doc info object for labeling output
-DocInfo Doc_info;
 
 // Return status
 bool is_wrinkled() const {return  Is_wrinkled;};
@@ -1205,7 +1316,7 @@ Vector<TriangleMeshCurveSection *> Internal_curve_section1_pt;
 
 
 template<class ELEMENT>
-UnstructuredFvKProblem<ELEMENT>::UnstructuredFvKProblem(double element_area)
+UnstructuredLDProblem<ELEMENT>::UnstructuredLDProblem(double element_area)
 :
 Element_area(element_area),
 Investigate_eigen_cross(false),
@@ -1383,7 +1494,7 @@ if(TestSoln::Dump_triangulateio)
 /// all elements
 //========================================================================
 template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::complete_problem_setup()
+void UnstructuredLDProblem<ELEMENT>::complete_problem_setup()
 {   
 unsigned nbound = Outer_boundary1 + 1;
  // Upcast to current element
@@ -1438,11 +1549,11 @@ for(unsigned e=0;e<n_element;e++)
 ELEMENT* el_pt = dynamic_cast<ELEMENT*>(Bulk_mesh_pt->element_pt(e));
 
 //Set the pressure function pointers and the physical constants
-el_pt->pressure_fct_pt() = &TestSoln::get_pressure;
+el_pt->pressure_fct_pt() = TestSoln::pressure_fct_pt;
 el_pt->nu_pt() = &TestSoln::nu;
-el_pt->d_pressure_dn_fct_pt() = &TestSoln::get_d_pressure_dn;
-el_pt->d_pressure_dr_fct_pt() = &TestSoln::get_d_pressure_dr;
-el_pt->d_pressure_d_grad_u_fct_pt() = &TestSoln::get_d_pressure_d_grad_u;
+el_pt->d_pressure_dn_fct_pt() = TestSoln::d_pressure_dn_fct_pt;
+el_pt->d_pressure_dr_fct_pt() = TestSoln::d_pressure_dr_fct_pt;
+el_pt->d_pressure_d_grad_u_fct_pt() = TestSoln::d_pressure_d_grad_u_fct_pt;
 el_pt->error_metric_fct_pt() = &TestSoln::error_metric;
 el_pt->multiple_error_metric_fct_pt() = &TestSoln::fourier_transform_metric;
 el_pt->thickness_pt() = &TestSoln::h;
@@ -1460,7 +1571,7 @@ apply_boundary_conditions();
 /// Helper function to apply boundary conditions
 //========================================================================
 template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::apply_boundary_conditions()
+void UnstructuredLDProblem<ELEMENT>::apply_boundary_conditions()
 {
 
 // Loop over all boundary nodes
@@ -1534,7 +1645,7 @@ for (unsigned inod=0;inod<num_nod;inod++)
 } // end set bc
 
 template <class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::
+void UnstructuredLDProblem<ELEMENT>::
 upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt) 
 {
  // How many bulk elements adjacent to boundary b
@@ -1558,7 +1669,7 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
     throw OomphLibError(
      "I have encountered a boundary number that I wasn't expecting. This is very\
  peculiar.",
-     "UnstructuredFvKProblem::upgrade_edge_elements_to_curve(...)",
+     "UnstructuredLDProblem::upgrade_edge_elements_to_curve(...)",
      OOMPH_EXCEPTION_LOCATION);
    break;
   }
@@ -1616,7 +1727,7 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
        "The edge number has been set to a value greater than two: either we have\
  quadrilateral elements or more likely the index_of_interior_node was never set\
  and remains at its default value.",
-       "UnstructuredFvKProblem::upgrade_edge_elements_to_curve(...)",
+       "UnstructuredLDProblem::upgrade_edge_elements_to_curve(...)",
        OOMPH_EXCEPTION_LOCATION);
       break;
      }
@@ -1629,7 +1740,7 @@ upgrade_edge_elements_to_curve(const unsigned &b, Mesh* const &bulk_mesh_pt)
        "The Edge coordinate appears to be decreasing from s_start to s_end. \
 Either the parametric boundary is defined to be clockwise (a no-no) or \
 the mesh has returned an inverted element (less likely)",
-       "UnstructuredFvKProblem::upgrade_edge_elements_to_curve(...)",
+       "UnstructuredLDProblem::upgrade_edge_elements_to_curve(...)",
        OOMPH_EXCEPTION_LOCATION);
     }
 
@@ -1640,7 +1751,7 @@ the mesh has returned an inverted element (less likely)",
 }// end upgrade elements
 
 template <class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::
+void UnstructuredLDProblem<ELEMENT>::
 rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
 {
  // How many bulk elements
@@ -1705,7 +1816,7 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
 /// Doc the solution
 //========================================================================
 template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::doc_solution(const 
+void UnstructuredLDProblem<ELEMENT>::doc_solution(const 
                                                     std::string& comment)
 { 
 ofstream some_file;
@@ -1828,7 +1939,7 @@ Doc_info.number()++;
 /// Doc the solution
 //========================================================================
 template<class ELEMENT>
-void UnstructuredFvKProblem<ELEMENT>::print_jacobian()
+void UnstructuredLDProblem<ELEMENT>::print_jacobian()
 {
  // Print the Jacobian
  describe_dofs();
@@ -1868,8 +1979,7 @@ void UnstructuredFvKProblem<ELEMENT>::print_jacobian()
 // Extend the namespace to write a checkpoint
 namespace TestSoln{
 // Problem_pt
-UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,
-KoiterSteigmannPlateEquations> >* problem_pt=0;
+LDBaseProblem* problem_pt=0;
 
 static void write_checkpoint()
  {
@@ -1994,6 +2104,10 @@ int main(int argc, char **argv)
  // Flag for dumping every iteration
  CommandLineArgs::specify_command_line_flag("--dump_at_every_step");
 
+ // Do foeppl correction
+ CommandLineArgs::specify_command_line_flag("--do_foeppl_correction");
+ CommandLineArgs::specify_command_line_flag("--truncate_load_term");
+
  CommandLineArgs::specify_command_line_flag("--singular_tolerance", 
   &TestSoln::Singular_tolerance);
 
@@ -2020,6 +2134,15 @@ int main(int argc, char **argv)
  TestSoln::Dump_triangulateio =CommandLineArgs::command_line_flag_has_been_set("--dump_triangulateio");
  // Do h loop at const vk pressure 
  bool do_h_loop_const_vk_pressure = CommandLineArgs::command_line_flag_has_been_set("--keep_vk_pressure_constant");
+ // Do foeppl correction
+ bool do_foeppl_correction =  CommandLineArgs::command_line_flag_has_been_set("--do_foeppl_correction");
+ // Do foeppl correction
+ bool truncate_load_term =  CommandLineArgs::command_line_flag_has_been_set("--truncate_load_term");
+ // Print warning
+ if( truncate_load_term && !do_foeppl_correction)
+  {
+   oomph_info << "Warning: flag --do_load_term has no effect without --do_foeppl_correction flag."<<std::endl;
+  }
  // Do fd jacobian
  TestSoln::use_fd_jacobian =CommandLineArgs::command_line_flag_has_been_set("--use_fd_jacobian");
  // Dump at every step flag
@@ -2053,36 +2176,50 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
  double first_p = p_start;
 
  // Problem instance
- UnstructuredFvKProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,KoiterSteigmannPlateEquations> >problem(element_area);
- // Set pointer to the problem
- TestSoln::problem_pt = &problem;
+ if(do_foeppl_correction)
+ {
+  // Set pointer to the problem
+  oomph_info<<"Doing Foeppl von Karman correction model"<<std::endl;
+  // Change the pressure fct pt
+  if(truncate_load_term)
+  {
+   TestSoln::pressure_fct_pt = &TestSoln::get_trunc_pressure;
+   TestSoln::d_pressure_d_grad_u_fct_pt  = &TestSoln::get_d_trunc_pressure_d_grad_u;
+  }
+  TestSoln::problem_pt = new UnstructuredLDProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,FoepplVonKarmanCorrectionEquations> >(element_area);
+ }
+ else
+  {
+   // Set pointer to the problem
+   TestSoln::problem_pt = new UnstructuredLDProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,KoiterSteigmannPlateEquations> >(element_area);
+  }
 
  // Set up eigensolver parameters
  if(TestSoln::use_direct_solver) 
   {
-   problem.eigen_solver_pt() = new LAPACK_QZ;
-   TestSoln::neig = problem.ndof(); 
+   TestSoln::problem_pt->eigen_solver_pt() = new LAPACK_QZ;
+   TestSoln::neig = TestSoln::problem_pt->ndof(); 
   }
  else
   {
-   problem.eigen_solver_pt() = new ARPACK;
+   TestSoln::problem_pt->eigen_solver_pt() = new ARPACK;
    // Downcast to ARPACK*
-   ARPACK* arpack_pt=(dynamic_cast<ARPACK*>(problem.eigen_solver_pt()));
+   ARPACK* arpack_pt=(dynamic_cast<ARPACK*>(TestSoln::problem_pt->eigen_solver_pt()));
    arpack_pt->narnoldi() = TestSoln::Arnoldi_multiple * TestSoln::neig;
    // Look for LARGE eigenvalues in shift inverted system i.e smallest eigenvalues
    arpack_pt->get_eigenvalues_right_of_shift();
   }
  // Change some tolerances
- problem.max_residuals()=1e10;
- problem.max_newton_iterations()=30;
- problem.newton_solver_tolerance()=newton_solver_tolerance;
+ TestSoln::problem_pt->max_residuals()=1e10;
+ TestSoln::problem_pt->max_newton_iterations()=30;
+ TestSoln::problem_pt->newton_solver_tolerance()=newton_solver_tolerance;
 
  // Check if a checkpoint file is present at start-up: use it if so 
  std::ifstream chk;
  chk.open("checkpoint.dump");
  if (chk.is_open()) {
   std::cerr<<"Restarting from checkpoint file."<<std::endl;
-  problem.read(chk);    
+  TestSoln::problem_pt->read(chk);    
   chk.close();
 
   std::cerr<<"Opening checkpoint_p."<<std::endl;
@@ -2133,8 +2270,8 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
     std::cerr<<"Exiting."<<std::endl;
     exit(-1);
    }
-  chk>>problem.Doc_info.number();
-  oomph_info<<"The info num read in is: "<<problem.Doc_info.number()<<std::endl;
+  chk>>TestSoln::problem_pt->Doc_info.number();
+  oomph_info<<"The info num read in is: "<<TestSoln::problem_pt->Doc_info.number()<<std::endl;
   chk.close();
 
   // Now repick up the loop
@@ -2142,25 +2279,23 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
   oomph_info << "Restarting at pressure" << first_p <<std::endl;
   
   oomph_info << "Newton Solve to check"<<std::endl;
-  problem.newton_solve();
+  TestSoln::problem_pt->newton_solve();
  } 
 
-//  problem.print_jacobian();
-
  // Loop to get to target pressure
- // problem.loop_until_target_pressure(first_p,p_end,(p_end-p_start)/(n_step));
+ // TestSoln::problem_pt->loop_until_target_pressure(first_p,p_end,(p_end-p_start)/(n_step));
  double h_start = TestSoln::h;
  if(n_step !=0)
-  problem.loop_until_target_pressure(first_p,p_end,(p_end-p_start)/(n_step));
+  TestSoln::problem_pt->loop_until_target_pressure(first_p,p_end,(p_end-p_start)/(n_step));
 
  if(n_h_step!=0 &&  !do_h_loop_const_vk_pressure)
-  problem.loop_until_target_thickness(h_start,h_end,(h_end-h_start)/(n_h_step));
+  TestSoln::problem_pt->loop_until_target_thickness(h_start,h_end,(h_end-h_start)/(n_h_step));
 
  else if(n_h_step!=0 && do_h_loop_const_vk_pressure)
-  problem.loop_until_target_thickness_keep_fvk_pressure_constant(h_start,h_end
+  TestSoln::problem_pt->loop_until_target_thickness_keep_fvk_pressure_constant(h_start,h_end
    ,(h_end-h_start)/(n_h_step));
 
- delete problem.eigen_solver_pt();
+ delete TestSoln::problem_pt->eigen_solver_pt();
  remove("checkpoint.dump");
  remove("checkpoint_p");
  remove("checkpoint_h");
@@ -2168,5 +2303,6 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
  remove("checkpoint_nsoln");
 
  oomph_info <<"Exiting Normally."<<std::endl;
+ delete TestSoln::problem_pt;
 } //End of main
 
