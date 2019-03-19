@@ -276,7 +276,7 @@ double Singular_prefactor = .1;
 double Arnoldi_multiple = 2; 
 
 // Use a fd jacobian
-bool use_fd_jacobian = true;
+bool use_fd_jacobian = false;
 
 // Dump the triangulateio object
 bool Dump_triangulateio = false;
