@@ -1254,6 +1254,7 @@ void solve_eigen_problem(unsigned& number_of_negative_eigenvalues,
  }
 
 void print_jacobian();
+void disable_proper_truncation();
 
 private:
 /// Helper function to apply boundary conditions
@@ -1816,6 +1817,34 @@ rotate_edge_degrees_of_freedom( Mesh* const &bulk_mesh_pt)
 /// Doc the solution
 //========================================================================
 template<class ELEMENT>
+void UnstructuredLDProblem<ELEMENT>::disable_proper_truncation()
+{ 
+ // Complete the build of all elements so they are fully functional
+ unsigned n_element = Bulk_mesh_pt->nelement();
+ for(unsigned e=0;e<n_element;e++)
+ {
+  // Try to cast to FiniteElement
+  FoepplVonKarmanCorrectionEquations<2,2>*
+  el_pt=dynamic_cast<FoepplVonKarmanCorrectionEquations<2,2>*>(Bulk_mesh_pt->element_pt(e));
+  if (el_pt==0)
+    {
+     throw OomphLibError(
+      "Can't execute compute_error(...) with multiple errors for non \
+ LargeDisplacementPlateElements",
+      OOMPH_CURRENT_FUNCTION,
+      OOMPH_EXCEPTION_LOCATION);
+    }
+   else
+    {
+     el_pt->disable_proper_truncation();
+    }
+ }
+}
+
+//==start_of_doc_solution=================================================
+/// Doc the solution
+//========================================================================
+template<class ELEMENT>
 void UnstructuredLDProblem<ELEMENT>::doc_solution(const 
                                                     std::string& comment)
 { 
@@ -2106,6 +2135,7 @@ int main(int argc, char **argv)
 
  // Do foeppl correction
  CommandLineArgs::specify_command_line_flag("--do_foeppl_correction");
+ CommandLineArgs::specify_command_line_flag("--disable_proper_truncation");
  CommandLineArgs::specify_command_line_flag("--truncate_load_term");
 
  CommandLineArgs::specify_command_line_flag("--singular_tolerance", 
@@ -2138,6 +2168,8 @@ int main(int argc, char **argv)
  bool do_foeppl_correction =  CommandLineArgs::command_line_flag_has_been_set("--do_foeppl_correction");
  // Do foeppl correction
  bool truncate_load_term =  CommandLineArgs::command_line_flag_has_been_set("--truncate_load_term");
+ // Diable truncation
+ bool disable_proper_truncation =  CommandLineArgs::command_line_flag_has_been_set("--disable_proper_truncation");
  // Print warning
  if( truncate_load_term && !do_foeppl_correction)
   {
@@ -2187,6 +2219,12 @@ problems for the curved edge elements. The prescribed area will be ignored."<<st
    TestSoln::d_pressure_d_grad_u_fct_pt  = &TestSoln::get_d_trunc_pressure_d_grad_u;
   }
   TestSoln::problem_pt = new UnstructuredLDProblem<LargeDisplacementPlateC1CurvedBellElement<2,2,3,FoepplVonKarmanCorrectionEquations> >(element_area);
+  // Disable the truncation
+  if(disable_proper_truncation)
+   {
+    dynamic_cast<UnstructuredLDProblem<LargeDisplacementPlateC1CurvedBellElement
+     <2,2,3,FoepplVonKarmanCorrectionEquations> >*>(TestSoln::problem_pt)->disable_proper_truncation();
+   }
  }
  else
   {
