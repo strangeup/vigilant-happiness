@@ -1168,8 +1168,8 @@ void solve_eigen_problem(unsigned& number_of_negative_eigenvalues,
   // How many eigenvalues do we try to get
   // Set default to positive infinity
   complex<double> default_value;
-  default_value.real()=std::numeric_limits<double>::infinity();
-  default_value.imag()=0;
+  default_value.real(std::numeric_limits<double>::infinity());
+  default_value.imag(0);
   DoubleVector broken_symmetry_vector;
 
   Vector<complex<double> > eigenvalues(TestSoln::neig,default_value);
