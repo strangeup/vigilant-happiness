@@ -243,7 +243,8 @@ void error_metric(const Vector<double>& x, const
  using namespace SlowFourierTransform;
  // We use the theta derivative of the out of plane deflection
  error = pow((-x[1]*u[13] + x[0]*u[14]),2)/(x[0]*x[0]+x[1]*x[1]);
- norm  = pow(x[0]*u[13] +x[1]*u[14],2)/(x[0]*x[0]+x[1]*x[1]);
+// norm  = pow(x[0]*u[13] +x[1]*u[14],2)/(x[0]*x[0]+x[1]*x[1]):
+ norm = 1.0;
 }
 
 void fourier_transform_metric(const Vector<double>& x, const 
@@ -479,22 +480,27 @@ void pin_first_point()
      nod_pt -> set_value(6,0.0);
     }
  }
-void output_centre_point()
+
+void output_fish_maw()
  {
+  Vector<double> x(2);
   // Loop over internal boundary
-  unsigned num_nod=Bulk_mesh_pt->nboundary_node(2);
+  unsigned num_nod=Bulk_mesh_pt->nboundary_node(1);
   for (unsigned inod=0;inod<num_nod;inod++)
   {
    // Get nod
-   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(2,inod);
-   Vector<double> x(2,0.0);
-   x[0]=nod_pt->x(0);
-   x[1]=nod_pt->x(1);
-   // If its in the centre
-   if(x[0]*x[0]+x[1]*x[1]<1e-12)
+   Node* nod_pt=Bulk_mesh_pt->boundary_node_pt(1,inod);
+   // If its the maw
+   if(nod_pt->is_on_boundary(2))
     {
-     oomph_info <<"Found centre: "<<x<<std::endl;
-     oomph_info <<"Centre deflection: "<<nod_pt->raw_value(12)<<std::endl;
+     x[0] = nod_pt->x(0);
+     x[1] = nod_pt->x(1);
+     oomph_info <<"Found fish maw: "<<x<<std::endl;
+     oomph_info <<"Deflection: "<<nod_pt->raw_value(12)<<std::endl;
+     oomph_info <<"x displacement: "<<nod_pt->raw_value(0)<<std::endl;
+     // Write to trace file
+     Trace_file << x[0] <<" "<<x[1] <<" "<<nod_pt->raw_value(0)
+         <<" "<<nod_pt->raw_value(6)<<" "<<nod_pt->raw_value(12)<<" ";
     }
   }
  }
@@ -509,6 +515,7 @@ return dynamic_cast<TriangleMesh<ELEMENT>*> (Problem::mesh_pt());
 
 // Return status
 bool is_wrinkled() const {return  Is_wrinkled;};
+
 
 // Recursion to find the singular value
 void find_singular_p_value(const unsigned nneg_initial,
@@ -1825,8 +1832,6 @@ char filename[100];
 // Number of plot points
 unsigned npts = 2;
 
-if(Use_centre_point_as_pin)
- output_centre_point();
 
 sprintf(filename,"RESLT/coarse_soln%i-%f.dat",Doc_info.number(),Element_area);
 some_file.open(filename);
@@ -1914,7 +1919,9 @@ for (unsigned r = 0; r < n_region; r++)
  oomph_info << "Fourier coefficients of computed solution: " << /*sqrt*/(dummy_errors)<< std::endl;
  oomph_info << "Fourier norms of computed solution: " << /*sqrt*/(zero_norms)<< std::endl;
  
- Trace_file << TestSoln::p_mag << " " << "\n ";
+ Trace_file << TestSoln::p_mag << " ";
+ output_fish_maw();
+ Trace_file << std::endl;
 
 // Doc error and return of the square of the L2 error
 //---------------------------------------------------
